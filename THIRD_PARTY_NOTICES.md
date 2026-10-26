@@ -20,3 +20,9 @@ conversion logic in `slicerbridge/engines/u1.py`, from https://github.com/josuan
 Printer, process and filament presets are read at run time from the slicers you install: OrcaSlicer (AGPL v3),
 Bambu Studio (AGPL v3), PrusaSlicer (AGPL v3) and the makers' forks. SlicerBridge ships none of them; the
 settings it builds from them stay in your local cache.
+
+## Unicorn Graveyard logo
+
+`plugin/.claude-plugin/icon.png` is the Unicorn Graveyard logo, the plugin's icon in the Claude directory. It is
+a mark of Unicorn Graveyard, all rights reserved, and is not licensed under the GPL: forks should use their own
+icon.
