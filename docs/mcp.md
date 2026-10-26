@@ -21,8 +21,9 @@ SlicerBridge looks for each slicer in `/Applications`. If one is elsewhere, set 
 settings: `/plugin`, select SlicerBridge, **Configure**. An empty setting means `/Applications`.
 
 The plugin runs `uvx slicerbridge==<its version> mcp`: an exact version, so an update to the plugin is an update
-to the server too. Beside it, `plugin/uv.lock` records that version and every package it needs at exact
-versions with their PyPI hashes, which Anthropic's directory checks.
+to the server too. Beside it, `plugin/uv.lock` pins that version and every package it needs to exact versions
+with their PyPI hashes, for Python 3.12 and newer. Anthropic's directory checks it, and Claude Code versions
+that launch plugins from their lock install exactly that set; older ones run plain `uvx`.
 
 ## Claude Desktop chats and other MCP clients
 

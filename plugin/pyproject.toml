@@ -1,7 +1,8 @@
 # The lock for the Claude plugin's MCP server. .mcp.json starts the server with
 # `uvx slicerbridge==<version> mcp`, and Anthropic's directory reads this project's uv.lock,
-# next to it, for the exact versions, PyPI sources and hashes behind that launcher (its Verified
-# badge needs them). uvx itself doesn't read the lock. After a release is on PyPI,
+# next to it, for the exact versions, PyPI sources and hashes behind that launcher. Claude Code
+# versions with a locked launch install exactly this set; older ones (2.1.143 here) run plain
+# uvx, which resolves the pinned version's dependencies itself. After a release is on PyPI,
 # `python scripts/release.py plugin <version>` moves the pins and relocks.
 #
 # The lock covers Python 3.12+: that keeps it well under the directory's 256 KiB per-file

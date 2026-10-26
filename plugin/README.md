@@ -24,8 +24,8 @@ plugin's settings: `/plugin`, select SlicerBridge, **Configure**. Leave a settin
 
 - It starts its MCP server with `uvx slicerbridge==<version> mcp`, the version in the plugin's manifest, which
   downloads that exact version of the [slicerbridge](https://pypi.org/project/slicerbridge/) package from PyPI
-  the first time. The plugin's `uv.lock` records it and everything it needs at exact versions with their
-  hashes.
+  the first time. The plugin's `uv.lock` pins it and everything it needs to exact versions with their hashes;
+  Claude Code versions that launch plugins from their lock install exactly that set.
 - It runs the command lines of the slicers installed on your computer, to build each printer's settings and
   to slice files when you ask it to.
 - It reads the 3MF files you name and writes the files it makes into the folder you name, or into `out/`
