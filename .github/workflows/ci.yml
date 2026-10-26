@@ -3,7 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+    # A change to only these runs nothing: no test reads them, and each run asks for
+    # four macOS runners, which GitHub sometimes can't find. README.md and CHANGELOG.md
+    # aren't here because the tests and the package build read them.
+    paths-ignore: ["docs/**", "plugin/README.md", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.gif", "**/*.svg", "**/*.webp"]
   pull_request:
+    paths-ignore: ["docs/**", "plugin/README.md", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.gif", "**/*.svg", "**/*.webp"]
 
 permissions:
   contents: read
