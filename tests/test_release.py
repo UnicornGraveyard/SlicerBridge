@@ -1,4 +1,4 @@
-"""The release pieces agree: one version everywhere, and every slicer setting reaches the code."""
+"""The release pieces agree: one version everywhere, a plugin that runs its lock, and every slicer setting reaches the code."""
 import importlib.util
 import json
 import re
@@ -20,9 +20,27 @@ def test_the_changelog_has_this_version():
     assert release.notes(__version__)
 
 
-def test_the_plugin_pins_its_launch_command():
-    args = json.loads((ROOT / "plugin" / ".mcp.json").read_text())["mcpServers"]["slicerbridge"]["args"]
-    assert args == [f"slicerbridge=={__version__}", "mcp"]
+def test_the_plugin_names_one_version():
+    """Its manifest, pin and lock agree. It may trail the package: it moves once a release is on PyPI."""
+    assert release.plugin_problems() == []
+
+
+def test_the_plugin_launches_from_its_lockfile():
+    server = json.loads((ROOT / "plugin" / ".mcp.json").read_text())["mcpServers"]["slicerbridge"]
+    assert server["command"] == "uv"
+    assert server["args"] == ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}", "slicerbridge", "mcp"]
+
+
+def test_the_lock_is_pypi_only_hashed_and_small_enough():
+    """Exact versions, PyPI sources and hashes earn the directory's Verified badge; past 256 KiB it isn't read."""
+    lock = (ROOT / "plugin" / "uv.lock").read_text()
+    packages = [b for b in lock.split("[[package]]")[1:] if 'name = "slicerbridge-claude-plugin"' not in b]
+    assert packages
+    for block in packages:
+        name = re.search(r'name = "([^"]+)"', block).group(1)
+        assert 'source = { registry = "https://pypi.org/simple" }' in block, name
+        assert 'hash = "sha256:' in block, name
+    assert (ROOT / "plugin" / "uv.lock").stat().st_size < 200 * 1024  # headroom under the directory's 256 KiB
 
 
 def test_every_slicer_setting_reaches_the_code():

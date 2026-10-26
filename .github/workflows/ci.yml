@@ -43,3 +43,22 @@ jobs:
           /tmp/wheel/bin/slicerbridge printers -p u1
           /tmp/wheel/bin/python -c "import slicerbridge.mcp_server"
 
+  plugin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - name: The plugin's lock matches its pyproject
+        run: uv lock --check --project plugin
+      - name: The plugin's launch command installs the lock and runs, MCP server included
+        run: |
+          uv run --frozen --project plugin slicerbridge printers -p u1
+          uv run --frozen --project plugin python -c "import slicerbridge.mcp_server"
+

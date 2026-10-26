@@ -8,3 +8,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # The Claude plugin's lock. SlicerBridge itself moves with `scripts/release.py plugin` after a release.
+  - package-ecosystem: uv
+    directory: /plugin
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: slicerbridge

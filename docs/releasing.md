@@ -2,8 +2,9 @@
 
 A release is a git tag. Pushing `v<version>` runs `.github/workflows/release.yml`, which:
 
-1. checks that the tag, the package, the plugin's manifest, the plugin's pinned launch command, `server.json`
-   and `CHANGELOG.md` all name the same version (`scripts/release.py check`), and runs lint and the tests;
+1. checks that the tag, the package, `server.json` and `CHANGELOG.md` all name the same version, and that the
+   plugin's manifest, pin and lock agree with each other (`scripts/release.py check`), and runs lint and the
+   tests;
 2. builds the package and publishes it to [PyPI](https://pypi.org/project/slicerbridge/) with trusted
    publishing, so no token is stored anywhere;
 3. publishes `server.json` to the [MCP Registry](https://registry.modelcontextprotocol.io), logged in with the
@@ -12,14 +13,21 @@ A release is a git tag. Pushing `v<version>` runs `.github/workflows/release.yml
 
 ## Each release
 
-1. Set the new version in `slicerbridge/__init__.py`, `server.json` (twice), `plugin/.claude-plugin/plugin.json`
-   and the pin in `plugin/.mcp.json`, and add its `CHANGELOG.md` section.
-   `python scripts/release.py check <version>` says what's left; the tests check it too.
+1. Set the new version in `slicerbridge/__init__.py` and `server.json` (twice), and add its `CHANGELOG.md`
+   section. `python scripts/release.py check <version>` says what's left; the tests check it too.
 2. Run the slicer tests on a Mac with the slicers installed: `SLICERBRIDGE_SLICER_TESTS=1 pytest -m slicer`.
 3. Commit, push, wait for CI, then tag and push the tag:
    ```bash
    git tag v0.2.0 && git push origin v0.2.0
    ```
+4. Once the release workflow has finished and the version is on PyPI, move the Claude plugin to it. This sets
+   the plugin's manifest and pin, and relocks `plugin/uv.lock` with every dependency at its newest release:
+   ```bash
+   python scripts/release.py plugin 0.2.0
+   git commit -am "Plugin: run 0.2.0" && git push
+   ```
+   The directory picks the plugin up from `main`. Until this step the plugin keeps running the previous version:
+   its lock can only name a version that's on PyPI.
 
 A version number can be used on PyPI once only, even if that release is deleted.
 
