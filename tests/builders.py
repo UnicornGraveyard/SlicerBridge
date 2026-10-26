@@ -32,8 +32,12 @@ def _cube(size: float) -> tuple[list, list]:
 
 def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6579", "#2E8B57"),
                   types=None, plates: int = 2, size: float = 40.0, extruder: int = 1,
-                  paint: dict | None = None, bed: float = 256.0, extra_settings: dict | None = None) -> Path:
+                  paint: dict | None = None, bed: float = 256.0, extra_settings: dict | None = None,
+                  application: str = "BambuStudio-02.08.02.61", client_version: str | None = "02.08.02.61") -> Path:
     """Write a project: one cube per plate, on filament `extruder`, its faces painted per `paint`.
+
+    `application` and `client_version` are what saved it: QIDI Studio stamps "QIDIStudio-..." and,
+    like Anycubic Slicer Next, writes no X-BBL-Client-Version (None).
 
     `paint` maps face index (0-11) -> filament slot; the default paints slots 3 and 5,
     so with extruder 1 the model uses slots 1, 3 and 5 of a 5-color palette.
@@ -67,7 +71,7 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
     root_model = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" '
                   f'xmlns="{CORE}" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" '
                   f'xmlns:p="{PROD}" requiredextensions="p">'
-                  f'<metadata name="Application">BambuStudio-02.08.02.61</metadata>'
+                  f'<metadata name="Application">{application}</metadata>'
                   f'<metadata name="BambuStudio:3mfVersion">1</metadata>'
                   f'<resources>{"".join(objs)}</resources><build>{"".join(items)}</build></model>')
 
@@ -119,7 +123,8 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
         z.writestr("3D/Objects/object_1.model", objects_model)
         z.writestr("Metadata/model_settings.config", "".join(model_settings))
         z.writestr("Metadata/project_settings.config", json.dumps(settings, indent=4))
+        version = f'<header_item key="X-BBL-Client-Version" value="{client_version}"/>' if client_version else ""
         z.writestr("Metadata/slice_info.config",
                    '<?xml version="1.0" encoding="UTF-8"?>\n<config><header><header_item key="X-BBL-Client-Type" '
-                   'value="slicer"/><header_item key="X-BBL-Client-Version" value="02.08.02.61"/></header></config>')
+                   f'value="slicer"/>{version}</header></config>')
     return path

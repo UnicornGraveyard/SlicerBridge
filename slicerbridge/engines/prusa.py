@@ -1,5 +1,5 @@
 """
-engines/prusa.py -- a Bambu Studio project -> PrusaSlicer projects for Prusa's
+engines/prusa.py -- a multicolor project (Bambu Studio, OrcaSlicer or a fork) -> PrusaSlicer projects for Prusa's
 multi-material printers.
 
 Wraps Panda2Prusa (https://github.com/liutang/Panda2Prusa, MIT), pinned to one
@@ -348,7 +348,7 @@ def decide_mapping(src: Source, printer: Printer, explicit: Optional[dict]) -> d
             f"   That is a design decision -- which colors merge changes the piece -- so it\n"
             f"   is never made here. Decide it, then pass --map old=new for every slot above.\n"
             f"   Note: the pinned Panda2Prusa refuses to map two filaments to one extruder,\n"
-            f"   so today the merge has to be done in Bambu Studio (re-paint, export again)."
+            f"   so today the merge has to be done in the designer's slicer (re-paint, save again)."
         )
 
     if explicit is None:

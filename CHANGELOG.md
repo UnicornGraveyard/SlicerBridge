@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 (2026-10-26)
+
+- Any to any: projects saved by OrcaSlicer, QIDI Studio, Anycubic Slicer Next, ElegooSlicer and Flash Studio are
+  tested as input, as are SlicerBridge's own files. The docs no longer say "Bambu Studio" for the input.
+- Fixed: a project saved by QIDI Studio or Anycubic Slicer Next made a U1 file without a version stamp, which
+  its checks then refused.
+- A PrusaSlicer project or a mesh-only 3MF is refused with what to do, instead of an error.
+- Converting a file SlicerBridge wrote names the model without the printer ("Cube", not "Cube - QIDI Q2").
+
 ## 0.1.0 (2026-10-26)
 
 First public release.

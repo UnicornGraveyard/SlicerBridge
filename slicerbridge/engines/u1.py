@@ -1,5 +1,5 @@
 """
-engines/u1.py -- a Bambu Studio project -> a Snapmaker U1 project.
+engines/u1.py -- a multicolor project (Bambu Studio, OrcaSlicer or a fork) -> a Snapmaker U1 project.
 
 The conversion logic of bl2u1 (https://github.com/josuanbn/bl2u1, GPLv3), run
 offline on any project, with its U1 templates (data/u1/).
@@ -10,7 +10,7 @@ slots are compacted to extruders 1..K in slot order, and every paint_color is
 re-encoded to match (Panda2Prusa's paint.transform_states) -- so the paint
 follows its filament instead of silently landing on the wrong one. More than 4
 used slots is a refusal: merging two colors is a design decision, made in
-Bambu Studio, not here.
+the designer's slicer, not here.
 
 Size: never changed. Bambu plates are laid out for the source printer's bed (a
 330 mm H2C, a 256 mm P2S), and Snapmaker Orca lays them out again for the U1's
@@ -395,7 +395,7 @@ def plan(slug: str, src: Path, used: list[int]) -> tuple[list[dict], dict]:
             f"{TARGET_FILAMENTS} extruders.\n\n{lines}\n\n"
             f"   Fitting these onto {TARGET_FILAMENTS} means painting two colors with one filament.\n"
             f"   That is a design decision -- which colors merge changes the piece. Do it in\n"
-            f"   Bambu Studio: merge deliberately, re-paint, export, and run this again.\n"
+            f"   your slicer: merge deliberately, re-paint, save, and run this again.\n"
         )
     mapping = {old: new for new, old in enumerate(used, start=1)}
     return [by_id[s] for s in used], mapping
@@ -493,9 +493,13 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         if not any(h.get("key") == "printer_model_id" for h in header.findall("header_item")):
             ET.SubElement(header, "header_item",
                           {"key": "printer_model_id", "value": "Snapmaker U1"})
-        for h in header.findall("header_item"):  # the template's slicer version, not the source's
-            if h.get("key") == "X-BBL-Client-Version":
-                h.set("value", client_version)
+        # The template's slicer version, not the source's. A project saved by QIDI Studio or
+        # Anycubic Slicer Next has no such header: stamp it in, or the file has no version.
+        versions = [h for h in header.findall("header_item") if h.get("key") == "X-BBL-Client-Version"]
+        if not versions:
+            versions = [ET.SubElement(header, "header_item", {"key": "X-BBL-Client-Version"})]
+        for h in versions:
+            h.set("value", client_version)
         parent = root.find(".//plate")
         if parent is None:
             # Unsliced project: slice_info is a bare <config> stub with no <plate>.
@@ -636,7 +640,7 @@ def inspect(src: Path) -> list[str]:
     used, plates = analyze(src.stem, src)
     lines = []
     if len(used) > TARGET_FILAMENTS:
-        lines.append(f"{U1_LABEL}: uses {len(used)} slots, {len(used) - TARGET_FILAMENTS} must be merged in Bambu Studio")
+        lines.append(f"{U1_LABEL}: uses {len(used)} slots, {len(used) - TARGET_FILAMENTS} must be merged in the designer's slicer")
     for p in plates:
         rotated = orientation(p.size, bed)
         if rotated is None:

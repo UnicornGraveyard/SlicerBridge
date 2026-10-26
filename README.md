@@ -1,17 +1,19 @@
 # SlicerBridge
 
-**One Bambu Studio multicolor project in. A ready, checked file for every multicolor printer out.**
+**Any multicolor 3MF project in. A ready, checked file for every multicolor printer out.**
 
 [![CI](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-You design a painted multicolor model in Bambu Studio. People who download it own a Creality K2, an
+You paint a multicolor model in one slicer. The people who print it own a Bambu Lab A1, a Creality K2, an
 Elegoo Centauri Carbon, a QIDI Q2, a Prusa XL, a Snapmaker U1… and each of them has to retarget your project to
 their printer by hand, guessing at presets, and often losing the colors on the way.
 
-SlicerBridge does it for them, once, for 30 printers. It writes one file per printer, named for that printer
-(`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Every file:
+SlicerBridge takes the project from whichever slicer you made it in (Bambu Studio, OrcaSlicer, or a printer
+maker's own fork of either) and writes one file for each of 30 printers, named for that printer
+(`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Its files for Bambu Lab,
+OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every file:
 
 - **keeps the colors where you painted them.** The filaments a model actually uses are kept in order, and every
   painted triangle is re-encoded to match.
@@ -22,7 +24,24 @@ SlicerBridge does it for them, once, for 30 printers. It writes one file per pri
   printer's slicer to prove automatic color changes and a prime tower clear of the model. A file that fails a
   check is never written.
 
-## Printers
+## What goes in
+
+A multicolor `.3mf` **project**, painted or with colors per part or object, saved by any of these. They all
+write the same project format.
+
+| Saved by | |
+|---|---|
+| Bambu Studio | tested (2.8) |
+| OrcaSlicer | tested (2.4.2) |
+| QIDI Studio, Anycubic Slicer Next, ElegooSlicer, Flash Studio | tested with projects each of them saved |
+| SlicerBridge | its files for Bambu Lab, OrcaSlicer-family and U1 printers, to retarget them again |
+| Creality Print | should work, not yet tested: its command line can't save a project ([tell us](https://github.com/ianmacdowell13-byte/SlicerBridge/issues/new?template=slicer_compat.yml)) |
+| PrusaSlicer | not yet: PrusaSlicer projects are a different format |
+
+A mesh-only 3MF (no slicer project inside) is refused with what to do: open it in your slicer, give it its
+colors, and save the project.
+
+## What comes out
 
 | Printer | Key | Colors | File built for | Brand slicer checked |
 |---|---|---|---|---|
@@ -89,6 +108,7 @@ Then `slicerbridge doctor` shows what it found. Details, other install locations
 ```bash
 slicerbridge inspect model.3mf                       # colors used, plates, fit on each bed
 slicerbridge convert model.3mf                       # the popular printers, into out/<model>/
+slicerbridge convert "Dragon - Creality K2 Plus.3mf" --printers bambu   # retarget a file you already have
 slicerbridge convert model.3mf --printers all --slice --name "My Model" --prefix "My Shop - "
 slicerbridge convert model.3mf --printers creality,qidi,u1
 slicerbridge printers                                # every printer, its key, engine and slicer
@@ -102,7 +122,7 @@ slicerbridge brand-check "out/My Model"              # slice each file in its ma
 ### What it won't do
 
 - **Merge colors.** A model that uses more filaments than a printer holds is refused for that printer. Which two
-  colors to merge is a design decision; make it in Bambu Studio. (Prusa printers take an explicit `--map`.)
+  colors to merge is a design decision; make it in your slicer. (Prusa printers take an explicit `--map`.)
 - **Resize anything.** Size is never a reason to skip a printer either: the downloader scales it in their slicer.
 - **Write a file that failed a check**, or overwrite a file it didn't write (those move to `_previous/`).
 
@@ -119,7 +139,9 @@ claude mcp add slicerbridge -- slicerbridge-mcp     # Claude Code; other clients
 
 ## How it works
 
-Three engines share one printer table, one CLI and one set of checks:
+Every input is read the same way: Bambu Studio, OrcaSlicer and their forks save the same 3MF project format
+(meshes, paint, plates, settings). Three engines write the outputs, sharing one printer table, one CLI and one
+set of checks:
 
 - **orca**: Bambu Lab and OrcaSlicer-family printers. Each printer's slicer writes its settings once, from its
   own bundled presets ([templates](docs/how-it-works.md#templates)). A file is the source project with those

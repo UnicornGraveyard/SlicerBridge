@@ -39,9 +39,11 @@ READS = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 WRITES = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 mcp = MCPServer("slicerbridge", instructions=(
-    "SlicerBridge converts a Bambu Studio multicolor .3mf project into a ready, checked file for each "
+    "SlicerBridge converts a multicolor .3mf project, saved by Bambu Studio, OrcaSlicer or a maker's fork of either "
+    "(Creality Print, ElegooSlicer, Anycubic Slicer Next, Flash Studio, QIDI Studio), into a ready, checked file for each "
     "multicolor printer (Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa, Snapmaker U1). "
     "Start with inspect_model to see the colors a model uses and how it fits each bed, then convert_model. "
+    "A file SlicerBridge wrote can go back in for another printer. PrusaSlicer projects aren't read yet. "
     "A file that fails a check is never written; the result says why. Paths are on the user's machine."))
 
 PRINTERS = Annotated[str, Field(description=(
@@ -86,20 +88,21 @@ def list_printers(printers: PRINTERS = "all") -> str:
     return _run("printers", "--printers", printers)
 
 
-@mcp.tool(description="Describe a Bambu Studio .3mf project: its palette, the filament slots it actually uses, "
+@mcp.tool(description="Describe a multicolor .3mf project: its palette, the filament slots it actually uses, "
                       "each plate's size, and whether it fits each printer's bed (and at what scale if not).", annotations=READS)
 def inspect_model(model_path: Annotated[str, Field(description="Path to the .3mf project.")],
                   printers: PRINTERS = "popular") -> str:
     return _run("inspect", _path(model_path), "--printers", printers)
 
 
-@mcp.tool(description="Write a ready file per printer for a Bambu Studio .3mf project, each one checked before "
+@mcp.tool(description="Write a ready file per printer for a multicolor .3mf project (from Bambu Studio, OrcaSlicer, "
+                      "a maker's fork, or a file SlicerBridge wrote), each one checked before "
                       "it is kept. Files go in <out_dir>/<name>/, named '<prefix><name> - <printer>.3mf'. A "
                       "printer the model can't go to (more colors than it holds, an unknown filament type) is "
                       "refused with the reason; nothing wrong is written.", annotations=WRITES)
 def convert_model(model_path: Annotated[str, Field(description="Path to the .3mf project.")],
                   printers: PRINTERS = "popular",
-                  name: Annotated[str, Field(description="The model's name in file names; default: the file's name.")] = "",
+                  name: Annotated[str, Field(description="The model's name in file names; default: the file's name, less any printer in it.")] = "",
                   out_dir: Annotated[str, Field(description="Output folder; default: an 'out' folder beside the model.")] = "",
                   prefix: Annotated[str, Field(description="Text before every file name, e.g. 'My Shop - '.")] = "",
                   slice_first: Annotated[bool, Field(description="Slice each file in its slicer before keeping it "
@@ -119,7 +122,7 @@ def convert_model(model_path: Annotated[str, Field(description="Path to the .3mf
 @mcp.tool(description="Re-run SlicerBridge's checks on files it wrote (colors, paint, plates, size, settings), "
                       "and optionally slice each one.", annotations=READS)
 def verify_files(paths: PATHS,
-                 source_path: Annotated[str, Field(description="The Bambu project they were made from; enables "
+                 source_path: Annotated[str, Field(description="The project they were made from; enables "
                                                                "the color and size checks.")] = "",
                  slice_files: Annotated[bool, Field(description="Also slice each file in its slicer "
                                                                 "(a minute or two each).")] = False) -> str:

@@ -1,9 +1,13 @@
 """
-slicerbridge -- one Bambu Studio project in, a ready file for every multicolor printer out.
+slicerbridge -- any multicolor 3MF project in, a ready file for every multicolor printer out.
+
+Reads projects saved by Bambu Studio, OrcaSlicer, or a maker's fork of either (Creality Print, ElegooSlicer,
+Anycubic Slicer Next, Flash Studio, QIDI Studio), including any file SlicerBridge wrote.
 
     slicerbridge convert model.3mf                         # the popular printers
     slicerbridge convert model.3mf --printers all --slice  # every printer, each file sliced first
     slicerbridge convert model.3mf --printers creality,u1 --name "My Model"
+    slicerbridge convert "Dragon - Creality K2 Plus.3mf" --printers bambu   # retarget a file you have
     slicerbridge inspect model.3mf                         # colors used, plates, fit on each bed
     slicerbridge printers                                  # every printer, its engine and slicer
     slicerbridge verify "out/My Model" --source model.3mf --slice
@@ -17,15 +21,13 @@ import argparse
 import importlib
 import re
 import sys
+import zipfile
 from pathlib import Path
 
 from . import __version__
 from .errors import Refusal
-from .printers import (BRAND_SLICERS, PRINTERS, PRUSA_PRINTERS, SETS, SLICERS, U1_LABEL, cache_dir,
+from .printers import (ALL, BRAND_SLICERS, PRINTERS, PRUSA_PRINTERS, SETS, SLICERS, U1_LABEL, cache_dir,
                        engine_of, label_of, printer_of, select, tools_of, vendor_of)
-
-ENGINES = ("orca", "prusa", "u1")
-
 
 def _engine(name: str):
     """Import an engine only when it's used: they pull in Panda2Prusa and lxml."""
@@ -80,15 +82,37 @@ def _report(f: Path, info: list[str], problems: list[str], warnings: list[str]) 
 
 
 def _model(path: str) -> Path:
+    """A project SlicerBridge can read: a multicolor .3mf saved by Bambu Studio, OrcaSlicer or a fork of either."""
     src = Path(path).expanduser()
     if src.suffix.lower() != ".3mf" or not src.is_file():
         raise SystemExit(f"!! not a .3mf file: {src}")
+    try:
+        with zipfile.ZipFile(src) as z:
+            names = set(z.namelist())
+    except zipfile.BadZipFile:
+        raise SystemExit(f"!! {src.name} isn't a 3MF (not a zip archive)") from None
+    if "Metadata/project_settings.config" not in names:
+        if "Metadata/Slic3r_PE.config" in names:
+            raise SystemExit(f"!! {src.name} is a PrusaSlicer project. SlicerBridge reads projects saved by Bambu "
+                             f"Studio, OrcaSlicer or a maker's fork of either; PrusaSlicer projects aren't read yet.")
+        raise SystemExit(f"!! {src.name} carries no slicer project (a mesh-only 3MF?): open it in Bambu Studio or "
+                         f"OrcaSlicer, give it its colors, and save the project")
     return src
+
+
+def _default_name(src: Path) -> str:
+    """The file's name, without a printer SlicerBridge named it for: "Cube - QIDI Q2" is "Cube"."""
+    labels = sorted((label_of(k) for k in ALL), key=len, reverse=True)
+    stem = re.sub(r" - Plate \d+$", "", src.stem)
+    for label in labels:
+        if stem.endswith(f" - {label}"):
+            return stem[: -len(f" - {label}")]
+    return src.stem
 
 
 def cmd_convert(a: argparse.Namespace) -> int:
     src = _model(a.model)
-    name = a.name or src.stem
+    name = a.name or _default_name(src)
     keys = select(a.printers)
     explicit = _parse_map(a.map)
     if explicit and set(_by_engine(keys)) != {"prusa"}:
@@ -261,8 +285,8 @@ def build_parser() -> argparse.ArgumentParser:
                       "comma-separated or repeated")
 
     c = sub.add_parser("convert", help="write a file per printer for one Bambu project")
-    c.add_argument("model", help="a Bambu Studio .3mf project")
-    c.add_argument("--name", help="the model's name in file names (default: the file's name)")
+    c.add_argument("model", help="a multicolor .3mf project from Bambu Studio, OrcaSlicer or a fork of either")
+    c.add_argument("--name", help="the model's name in file names (default: the file's name, less any printer SlicerBridge put in it)")
     c.add_argument("--printers", "-p", **which)
     c.add_argument("--out", "-o", default="out", help="output folder; files go in <out>/<name>/ (default: out)")
     c.add_argument("--prefix", default="", help='text before every file name, e.g. "My Shop - "')
@@ -271,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(run=cmd_convert)
 
     i = sub.add_parser("inspect", help="colors used, plates and fit on each bed")
-    i.add_argument("model")
+    i.add_argument("model", help="a multicolor .3mf project")
     i.add_argument("--printers", "-p", **which)
     i.set_defaults(run=cmd_inspect)
 
@@ -281,7 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("verify", help="re-run the checks on written files")
     v.add_argument("paths", nargs="+", help=".3mf files or folders")
-    v.add_argument("--source", help="the Bambu project they were made from (enables the color and size checks)")
+    v.add_argument("--source", help="the project they were made from (enables the color and size checks)")
     v.add_argument("--slice", action="store_true", help="also slice each file in its slicer")
     v.set_defaults(run=cmd_verify)
 

@@ -1,6 +1,6 @@
 """
-engines/orca.py -- a Bambu Studio project -> one ready file per Bambu Lab or
-OrcaSlicer-family printer.
+engines/orca.py -- a multicolor project (Bambu Studio, OrcaSlicer or a fork) -> one
+ready file per Bambu Lab or OrcaSlicer-family printer.
 
 The printers (printers.PRINTERS) all run Bambu Studio or a slicer forked from
 OrcaSlicer, and read the Bambu .3mf format:
@@ -9,12 +9,12 @@ OrcaSlicer, and read the Bambu .3mf format:
   palette size. They are compacted to filaments 1..K in slot order, and every
   paint_color is re-encoded to match (Panda2Prusa's paint.transform_states).
   More colors than the printer holds is a refusal: merging two colors is a
-  design decision, made in Bambu Studio. Each filament gets that printer's
+  design decision, made in the designer's slicer. Each filament gets that printer's
   preset for its type.
 - Settings. The printer's own slicer writes its settings for one filament of
   each type (templates.py); a file's settings are those, one filament column
   per color, the bed type the app would pick, and the source's own flush volumes
-  for its colors. Then the print settings the designer chose in Bambu Studio
+  for its colors. Then the print settings the designer chose in their slicer
   (supports, infill, walls, layer height -- everything the source marks as
   changed) are carried over where the target has the same setting, and the
   slicer reads the whole result back: a value it doesn't take keeps the
@@ -162,7 +162,7 @@ def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
 def parse_filaments(path: Path) -> list[dict]:
     """The source's palette, from project_settings.config.
 
-    These projects are saved from Bambu Studio unsliced, so slice_info.config is
+    Projects are often saved unsliced, so slice_info.config may be
     an empty stub; project_settings.config always carries the palette.
     """
     with zipfile.ZipFile(path) as z:
@@ -773,7 +773,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bo
             f"{printer.label} holds {printer.tools}.\n\n{lines}\n\n"
             f"   Fitting these onto {printer.tools} means painting two colors with one filament.\n"
             f"   That is a design decision -- which colors merge changes the piece. Do it in\n"
-            f"   Bambu Studio: merge deliberately, re-paint, export, and run this again.\n")
+            f"   your slicer: merge deliberately, re-paint, save, and run this again.\n")
     meta, tsettings = templates_build.load(key)
     base = tsettings["PLA"]
     bed = Bed.of(base)

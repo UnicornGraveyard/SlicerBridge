@@ -1,10 +1,14 @@
 # How SlicerBridge works
 
-A Bambu Studio project is a zip: the model (`3D/3dmodel.model` and the meshes in `3D/Objects/`), its objects,
-parts and plates (`Metadata/model_settings.config`), and every setting (`Metadata/project_settings.config`).
-Paint is stored on each triangle as a `paint_color` string, a tree of sub-triangles each naming a filament.
+Bambu Studio, OrcaSlicer and the printer makers' forks of them (Creality Print, ElegooSlicer, Anycubic Slicer
+Next, Flash Studio, QIDI Studio) all save the same 3MF project format: a zip holding the model
+(`3D/3dmodel.model` and the meshes in `3D/Objects/`), its objects, parts and plates
+(`Metadata/model_settings.config`), and every setting (`Metadata/project_settings.config`). Paint is stored on
+each triangle as a `paint_color` string, a tree of sub-triangles each naming a filament.
 
-SlicerBridge reads it once and writes one file per printer, through one of three engines.
+So whichever of them saved a project, SlicerBridge reads it the same way, once, and writes one file per printer
+through one of three engines. Its own files are that format too (Prusa files aside), so any of them can go back
+in. PrusaSlicer projects are a different format, and aren't read yet.
 
 ## Colors
 
@@ -15,7 +19,7 @@ every `paint_color` is re-encoded to match ([Panda2Prusa](https://github.com/liu
 color, say) are renumbered the same way.
 
 More used slots than the printer holds is a refusal, not a merge: which two colors become one is a design
-decision. Each filament gets the printer's own preset for its type (PLA, PETG, ABS); another type is refused.
+decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type (PLA, PETG, ABS); another type is refused.
 
 ## Templates
 
@@ -30,7 +34,7 @@ the build). The bed type is the one the slicer's app picks for that printer; Bam
 
 ## Your settings
 
-Print settings the source changed from its preset (layer height, walls, infill, supports and the like) are
+Print settings the source project changed from its preset (layer height, walls, infill, supports and the like) are
 carried over where the target has the same setting. Then the target's slicer reads the whole file back: a carried
 value it doesn't take keeps the printer's own, and the output says so. A value the printer owns (its prime
 tower, purge volumes, machine limits) is never carried.
