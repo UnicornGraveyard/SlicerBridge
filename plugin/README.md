@@ -12,7 +12,7 @@ printers you name, re-check or slice the files, and slice them in each maker's o
 ## Requirements
 
 - macOS (Linux and Windows aren't tested yet)
-- [uv](https://docs.astral.sh/uv/), which runs the server
+- [uv](https://github.com/astral-sh/uv#installation), which runs the server
 - The slicers for the printers you want: OrcaSlicer 2.4.2 (Creality, Elegoo, Anycubic, Flashforge, QIDI),
   Bambu Studio (Bambu Lab), PrusaSlicer (Prusa). The Snapmaker U1 needs none.
 
@@ -32,7 +32,8 @@ plugin's settings: `/plugin`, select SlicerBridge, **Configure**. Leave a settin
   beside the model. It keeps each printer's settings in `~/Library/Caches/SlicerBridge`.
 - It sends nothing anywhere and collects nothing: no telemetry, no accounts, no uploads.
 
-Source and documentation: [github.com/UnicornGraveyard/SlicerBridge](https://github.com/UnicornGraveyard/SlicerBridge).
+Source: [github.com/UnicornGraveyard/SlicerBridge](https://github.com/UnicornGraveyard/SlicerBridge).
+Documentation: [docs](https://github.com/UnicornGraveyard/SlicerBridge/tree/main/docs).
 Support: [issues](https://github.com/UnicornGraveyard/SlicerBridge/issues).
 Privacy: [docs/privacy.md](https://github.com/UnicornGraveyard/SlicerBridge/blob/main/docs/privacy.md).
 License: GPL v3 or later.
