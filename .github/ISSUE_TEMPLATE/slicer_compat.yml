@@ -1,0 +1,30 @@
+name: Slicer compatibility
+description: A SlicerBridge file won't open, load its settings, or slice in a maker's own slicer.
+labels: [brand-slicer]
+body:
+  - type: input
+    id: slicer
+    attributes:
+      label: Slicer and version
+      placeholder: e.g. QIDI Studio 2.07.02.73
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer the file is for
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What the slicer does
+      description: The message it shows, or the output of `slicerbridge brand-check` on the file.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Where it comes from (optional)
+      description: If you found the behavior in the slicer's source, link it.

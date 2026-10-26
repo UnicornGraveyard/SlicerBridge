@@ -1,0 +1,35 @@
+name: Bug report
+description: Something converted wrong, was refused when it shouldn't be, or crashed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't attach paid or licensed models. Describe the project instead, or share a small one you made that shows the problem.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and its full output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: project
+    attributes:
+      label: The project
+      description: How many plates, palette colors and colors used, painted or per-part colors, modifiers or negative parts, supports.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: slicerbridge doctor
+      description: Paste the output of `slicerbridge doctor`.
+      render: text
+    validations:
+      required: true

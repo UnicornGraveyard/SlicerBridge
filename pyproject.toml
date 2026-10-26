@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slicerbridge"
+dynamic = ["version"]
+description = "Convert a Bambu Studio multicolor project into a ready, verified file for every multicolor printer: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa and the Snapmaker U1."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "Unicorn Graveyard" }]
+requires-python = ">=3.10"
+# Panda2Prusa (MIT) is vendored at a pinned commit: slicerbridge/_vendor/panda2prusa/VENDORED.md.
+dependencies = ["lxml>=4.9"]
+keywords = ["3mf", "3d-printing", "multicolor", "bambu-studio", "orcaslicer", "prusaslicer", "creality",
+            "elegoo", "anycubic", "flashforge", "qidi", "snapmaker", "converter"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2,<3"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+slicerbridge = "slicerbridge.cli:main"
+slicerbridge-mcp = "slicerbridge.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/ianmacdowell13-byte/SlicerBridge"
+Issues = "https://github.com/ianmacdowell13-byte/SlicerBridge/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "slicerbridge.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["slicerbridge*"]
+
+[tool.setuptools.package-data]
+slicerbridge = ["data/u1/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E702", "E731", "E741", "I001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slicer: needs a slicer installed (skipped when it isn't)"]

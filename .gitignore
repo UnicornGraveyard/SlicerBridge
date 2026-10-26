@@ -1,0 +1,14 @@
+# Never commit models or what SlicerBridge writes from them
+*.3mf
+!slicerbridge/data/u1/*.3mf
+out/
+_previous/
+
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.DS_Store

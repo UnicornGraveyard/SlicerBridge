@@ -1,0 +1,15 @@
+{
+  "source": "bl2u1 filament_types.3mf, Metadata/project_settings.config (GPLv3)",
+  "filament_type": [
+    "PLA",
+    "PETG-HF",
+    "ABS",
+    "TPU"
+  ],
+  "filament_settings_id": [
+    "Snapmaker PLA SnapSpeed @U1",
+    "Snapmaker PETG HF",
+    "Generic ABS",
+    "Generic TPU"
+  ]
+}

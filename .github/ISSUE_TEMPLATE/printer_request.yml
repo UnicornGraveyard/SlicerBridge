@@ -1,0 +1,28 @@
+name: Printer request
+description: Ask for a multicolor printer SlicerBridge doesn't write for yet.
+labels: [printer]
+body:
+  - type: input
+    id: printer
+    attributes:
+      label: Printer
+      placeholder: e.g. Creality K2, Bambu Lab H2D Pro
+    validations:
+      required: true
+  - type: textarea
+    id: multicolor
+    attributes:
+      label: How it prints multiple colors
+      description: Filament unit or toolheads, and how many colors it holds.
+    validations:
+      required: true
+  - type: input
+    id: slicer
+    attributes:
+      label: Slicer most owners use
+      placeholder: e.g. OrcaSlicer, Creality Print, PrusaSlicer
+  - type: textarea
+    id: presets
+    attributes:
+      label: Presets, if you know them
+      description: The printer, print and filament preset names in that slicer.

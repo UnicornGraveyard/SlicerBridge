@@ -1,0 +1,148 @@
+# SlicerBridge
+
+**One Bambu Studio multicolor project in. A ready, checked file for every multicolor printer out.**
+
+[![CI](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+
+You design a painted multicolor model in Bambu Studio. People who download it own a Creality K2, an
+Elegoo Centauri Carbon, a QIDI Q2, a Prusa XL, a Snapmaker U1… and each of them has to retarget your project to
+their printer by hand, guessing at presets, and often losing the colors on the way.
+
+SlicerBridge does it for them, once, for 30 printers. It writes one file per printer, named for that printer
+(`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Every file:
+
+- **keeps the colors where you painted them.** The filaments a model actually uses are kept in order, and every
+  painted triangle is re-encoded to match.
+- **carries that printer's own settings**, written by its own slicer, and that printer's filament presets. Your
+  print settings (layer height, walls, infill, supports) come along where the printer has the same setting.
+- **keeps its size.** Nothing is ever scaled. A model bigger than a bed gets a warning with the scale that fits.
+- **is checked before it's written**: colors, paint, plates, size and settings, and optionally sliced in that
+  printer's slicer to prove automatic color changes and a prime tower clear of the model. A file that fails a
+  check is never written.
+
+## Printers
+
+| Printer | Key | Colors | File built for | Brand slicer checked |
+|---|---|---|---|---|
+| Bambu Lab A1 mini | `a1mini` | 4 | Bambu Studio | — |
+| Bambu Lab A1 | `a1` | 4 | Bambu Studio | — |
+| Bambu Lab P1S | `p1s` | 16 | Bambu Studio | — |
+| Bambu Lab P2S | `p2s` | 16 | Bambu Studio | — |
+| Bambu Lab X1 Carbon | `x1c` | 16 | Bambu Studio | — |
+| Bambu Lab H2S | `h2s` | 16 | Bambu Studio | — |
+| Bambu Lab H2D | `h2d` | 16 | Bambu Studio | — |
+| Bambu Lab H2C | `h2c` | 16 | Bambu Studio | — |
+| Creality K2 Plus | `k2plus` | 4 | OrcaSlicer | Creality Print |
+| Creality K2 Pro | `k2pro` | 4 | OrcaSlicer | Creality Print |
+| Creality K2 SE | `k2se` | 4 | OrcaSlicer | Creality Print |
+| Creality Hi | `hi` | 4 | OrcaSlicer | Creality Print |
+| Creality K1C CFS | `k1c` | 4 | OrcaSlicer | Creality Print |
+| Elegoo Centauri Carbon | `cc` | 4 | OrcaSlicer | ElegooSlicer |
+| Anycubic Kobra S1 | `kobras1` | 4 | OrcaSlicer | Anycubic Slicer Next |
+| Anycubic Kobra S1 Max | `kobras1max` | 4 | OrcaSlicer | Anycubic Slicer Next |
+| Anycubic Kobra 3 | `kobra3` | 4 | OrcaSlicer | Anycubic Slicer Next |
+| Anycubic Kobra 3 Max | `kobra3max` | 4 | OrcaSlicer | Anycubic Slicer Next |
+| Anycubic Kobra X | `kobrax` | 4 | OrcaSlicer | Anycubic Slicer Next |
+| Flashforge AD5X | `ad5x` | 4 | OrcaSlicer | Flash Studio |
+| Flashforge Creator 5 | `creator5` | 4 | OrcaSlicer | Flash Studio |
+| QIDI Q2 | `q2` | 4 | OrcaSlicer | QIDI Studio |
+| QIDI Q2C | `q2c` | 4 | OrcaSlicer | QIDI Studio |
+| QIDI Plus4 | `plus4` | 4 | OrcaSlicer | QIDI Studio |
+| QIDI Max4 | `max4` | 4 | OrcaSlicer | QIDI Studio |
+| Prusa MMU3 | `mmu3` | 5 | PrusaSlicer | — |
+| Prusa XL | `xl` | 5 | PrusaSlicer | — |
+| Prusa Core One INDX 4T | `indx4` | 4 | PrusaSlicer | — |
+| Prusa Core One INDX 8T | `indx8` | 8 | PrusaSlicer | — |
+| Snapmaker U1 | `u1` | 4 | Snapmaker Orca | — |
+
+"File built for" is the slicer whose settings the file carries. Files for Creality, Elegoo, Anycubic, Flashforge
+and QIDI printers are written by OrcaSlicer and also checked in each maker's own slicer: see
+[docs/brand-slicers.md](docs/brand-slicers.md) for what those slicers read differently, and how the files handle it.
+Missing your printer? [Ask for it](https://github.com/ianmacdowell13-byte/SlicerBridge/issues/new?template=printer_request.yml),
+or [add it](docs/adding-a-printer.md).
+
+## Install
+
+SlicerBridge runs on **macOS** today (Linux and Windows: [help wanted](docs/install.md#linux-and-windows)), with
+Python 3.10 or newer.
+
+```bash
+pipx install git+https://github.com/ianmacdowell13-byte/SlicerBridge
+```
+
+It builds each printer's settings with that printer's slicer, so install the ones you need:
+
+| To write files for | Install |
+|---|---|
+| Bambu Lab printers | [Bambu Studio](https://bambulab.com/en/download/studio) |
+| Creality, Elegoo, Anycubic, Flashforge, QIDI | [OrcaSlicer 2.4.2](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/v2.4.2) |
+| Prusa printers | [PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/) |
+| Snapmaker U1 | nothing: its templates are built in |
+
+Then `slicerbridge doctor` shows what it found. Details, other install locations and environment variables:
+[docs/install.md](docs/install.md).
+
+## Use
+
+```bash
+slicerbridge inspect model.3mf                       # colors used, plates, fit on each bed
+slicerbridge convert model.3mf                       # the popular printers, into out/<model>/
+slicerbridge convert model.3mf --printers all --slice --name "My Model" --prefix "My Shop - "
+slicerbridge convert model.3mf --printers creality,qidi,u1
+slicerbridge printers                                # every printer, its key, engine and slicer
+slicerbridge verify "out/My Model" --source model.3mf --slice
+slicerbridge brand-check "out/My Model"              # slice each file in its maker's own slicer
+```
+
+`--printers` takes `all`, `popular`, a vendor (`bambu`, `creality`, `elegoo`, `anycubic`, `flashforge`, `qidi`,
+`prusa`, `snapmaker`), or printer keys, comma-separated.
+
+### What it won't do
+
+- **Merge colors.** A model that uses more filaments than a printer holds is refused for that printer. Which two
+  colors to merge is a design decision; make it in Bambu Studio. (Prusa printers take an explicit `--map`.)
+- **Resize anything.** Size is never a reason to skip a printer either: the downloader scales it in their slicer.
+- **Write a file that failed a check**, or overwrite a file it didn't write (those move to `_previous/`).
+
+## Use it from an AI assistant (MCP)
+
+SlicerBridge includes a local [MCP](https://modelcontextprotocol.io) server, so an assistant such as Claude can
+inspect a model, convert it, and read the check results for you. It runs on your machine over stdio: nothing is
+uploaded.
+
+```bash
+pipx install "slicerbridge[mcp] @ git+https://github.com/ianmacdowell13-byte/SlicerBridge"
+claude mcp add slicerbridge -- slicerbridge-mcp     # Claude Code; other clients: docs/mcp.md
+```
+
+## How it works
+
+Three engines share one printer table, one CLI and one set of checks:
+
+- **orca**: Bambu Lab and OrcaSlicer-family printers. Each printer's slicer writes its settings once, from its
+  own bundled presets ([templates](docs/how-it-works.md#templates)). A file is the source project with those
+  settings, its filaments compacted and its paint re-encoded, each plate moved onto its own plate of the new bed
+  with room for the prime tower.
+- **prusa**: Prusa multi-material printers, written by [Panda2Prusa](https://github.com/liutang/Panda2Prusa) as
+  PrusaSlicer projects, one per plate.
+- **u1**: the Snapmaker U1, with [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates.
+
+[docs/how-it-works.md](docs/how-it-works.md) explains each step; [docs/checks.md](docs/checks.md) lists every check.
+
+## Contributing
+
+Bug reports, printer requests and pull requests are welcome: start with [CONTRIBUTING.md](CONTRIBUTING.md).
+Please don't attach paid or licensed models to issues; the test suite builds its own projects.
+
+## License and credits
+
+SlicerBridge is free software under the [GNU GPL v3 or later](LICENSE). It stands on
+[Panda2Prusa](https://github.com/liutang/Panda2Prusa) (MIT, vendored) and
+[bl2u1](https://github.com/josuanbn/bl2u1) (GPLv3, its U1 templates), and on the work of the OrcaSlicer,
+Bambu Studio and PrusaSlicer projects, whose profiles it reads from your own installs. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Made by [Unicorn Graveyard](https://unicorngraveyard.com), who needed every ColorStacked model to reach every
+printer.
