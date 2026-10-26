@@ -33,8 +33,8 @@ slicerbridge = "slicerbridge.cli:main"
 slicerbridge-mcp = "slicerbridge.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/ianmacdowell13-byte/SlicerBridge"
-Issues = "https://github.com/ianmacdowell13-byte/SlicerBridge/issues"
+Homepage = "https://github.com/UnicornGraveyard/SlicerBridge"
+Issues = "https://github.com/UnicornGraveyard/SlicerBridge/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "slicerbridge.__version__" }

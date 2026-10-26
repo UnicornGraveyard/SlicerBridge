@@ -5,14 +5,14 @@
 Python 3.10 or newer, then either:
 
 ```bash
-pipx install git+https://github.com/ianmacdowell13-byte/SlicerBridge             # the CLI
-pipx install "slicerbridge[mcp] @ git+https://github.com/ianmacdowell13-byte/SlicerBridge"  # and the MCP server
+pipx install git+https://github.com/UnicornGraveyard/SlicerBridge             # the CLI
+pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"  # and the MCP server
 ```
 
 or, to work on it:
 
 ```bash
-git clone https://github.com/ianmacdowell13-byte/SlicerBridge && cd SlicerBridge
+git clone https://github.com/UnicornGraveyard/SlicerBridge && cd SlicerBridge
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mcp]"
 ```
 
@@ -71,5 +71,5 @@ PrusaSlicer runs against a private settings folder inside the cache, never your 
 The engines are plain Python and the U1 engine works anywhere. The rest needs a slicer's command line and its
 profiles folder. On Linux and Windows, point the environment variables above at the slicer's executable: for an
 extracted AppImage, the binary inside it, with `resources/profiles` beside or above it. This isn't tested yet.
-If you try it, please [open an issue](https://github.com/ianmacdowell13-byte/SlicerBridge/issues) with what
+If you try it, please [open an issue](https://github.com/UnicornGraveyard/SlicerBridge/issues) with what
 happened.

@@ -6,7 +6,7 @@ folder you name. Its MCP server runs locally over stdio and never listens on a n
 ## Reporting a vulnerability
 
 Please report security problems privately, not in a public issue: use GitHub's
-[private vulnerability reporting](https://github.com/ianmacdowell13-byte/SlicerBridge/security/advisories/new),
+[private vulnerability reporting](https://github.com/UnicornGraveyard/SlicerBridge/security/advisories/new),
 or the contact form at [unicorngraveyard.com/press](https://unicorngraveyard.com/press) (say it's about
 SlicerBridge). You'll get an answer within a week.
 

@@ -2,7 +2,7 @@
 
 **Any multicolor 3MF project in. A ready, checked file for every multicolor printer out.**
 
-[![CI](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ianmacdowell13-byte/SlicerBridge/actions/workflows/ci.yml)
+[![CI](https://github.com/UnicornGraveyard/SlicerBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/UnicornGraveyard/SlicerBridge/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
@@ -35,7 +35,7 @@ write the same project format.
 | OrcaSlicer | tested (2.4.2) |
 | QIDI Studio, Anycubic Slicer Next, ElegooSlicer, Flash Studio | tested with projects each of them saved |
 | SlicerBridge | its files for Bambu Lab, OrcaSlicer-family and U1 printers, to retarget them again |
-| Creality Print | should work, not yet tested: its command line can't save a project ([tell us](https://github.com/ianmacdowell13-byte/SlicerBridge/issues/new?template=slicer_compat.yml)) |
+| Creality Print | should work, not yet tested: its command line can't save a project ([tell us](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=slicer_compat.yml)) |
 | PrusaSlicer | not yet: PrusaSlicer projects are a different format |
 
 A mesh-only 3MF (no slicer project inside) is refused with what to do: open it in your slicer, give it its
@@ -79,7 +79,7 @@ colors, and save the project.
 "File built for" is the slicer whose settings the file carries. Files for Creality, Elegoo, Anycubic, Flashforge
 and QIDI printers are written by OrcaSlicer and also checked in each maker's own slicer: see
 [docs/brand-slicers.md](docs/brand-slicers.md) for what those slicers read differently, and how the files handle it.
-Missing your printer? [Ask for it](https://github.com/ianmacdowell13-byte/SlicerBridge/issues/new?template=printer_request.yml),
+Missing your printer? [Ask for it](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=printer_request.yml),
 or [add it](docs/adding-a-printer.md).
 
 ## Install
@@ -88,7 +88,7 @@ SlicerBridge runs on **macOS** today (Linux and Windows: [help wanted](docs/inst
 Python 3.10 or newer.
 
 ```bash
-pipx install git+https://github.com/ianmacdowell13-byte/SlicerBridge
+pipx install git+https://github.com/UnicornGraveyard/SlicerBridge
 ```
 
 It builds each printer's settings with that printer's slicer, so install the ones you need:
@@ -133,7 +133,7 @@ inspect a model, convert it, and read the check results for you. It runs on your
 uploaded.
 
 ```bash
-pipx install "slicerbridge[mcp] @ git+https://github.com/ianmacdowell13-byte/SlicerBridge"
+pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"
 claude mcp add slicerbridge -- slicerbridge-mcp     # Claude Code; other clients: docs/mcp.md
 ```
 

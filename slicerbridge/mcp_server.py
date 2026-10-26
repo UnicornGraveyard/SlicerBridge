@@ -74,7 +74,7 @@ def _run(*argv: str) -> str:
         except Exception as e:  # a bug: say so, and keep the server up
             code = 1
             print(f"!! unexpected error in slicerbridge {' '.join(argv[:1])}: {type(e).__name__}: {e}\n"
-                  f"   Please report it: https://github.com/ianmacdowell13-byte/SlicerBridge/issues")
+                  f"   Please report it: https://github.com/UnicornGraveyard/SlicerBridge/issues")
     return out.getvalue().rstrip() + f"\n\n[exit status {code}: {'ok' if code == 0 else 'something failed or was refused'}]"
 
 

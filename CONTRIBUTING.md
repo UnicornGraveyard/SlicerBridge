@@ -16,7 +16,7 @@ findings and pull requests are all welcome.
 ## Set up
 
 ```bash
-git clone https://github.com/ianmacdowell13-byte/SlicerBridge && cd SlicerBridge
+git clone https://github.com/UnicornGraveyard/SlicerBridge && cd SlicerBridge
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mcp]"
 .venv/bin/pytest            # fast: no slicer needed
 .venv/bin/ruff check .

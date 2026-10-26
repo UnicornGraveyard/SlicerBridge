@@ -10,7 +10,7 @@ given.
 ## Install
 
 ```bash
-pipx install "slicerbridge[mcp] @ git+https://github.com/ianmacdowell13-byte/SlicerBridge"
+pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"
 ```
 
 ### Claude Code
