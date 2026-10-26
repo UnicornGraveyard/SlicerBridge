@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "slicerbridge": {
+      "command": "uvx",
+      "args": [
+        "slicerbridge==0.2.0",
+        "mcp"
+      ],
+      "env": {
+        "SLICERBRIDGE_ORCASLICER": "${user_config.orcaslicer}",
+        "SLICERBRIDGE_BAMBU_STUDIO": "${user_config.bambu_studio}",
+        "SLICERBRIDGE_PRUSASLICER": "${user_config.prusaslicer}",
+        "SLICERBRIDGE_CREALITY_PRINT": "${user_config.creality_print}",
+        "SLICERBRIDGE_ELEGOOSLICER": "${user_config.elegooslicer}",
+        "SLICERBRIDGE_ANYCUBIC_SLICER_NEXT": "${user_config.anycubic_slicer_next}",
+        "SLICERBRIDGE_FLASH_STUDIO": "${user_config.flash_studio}",
+        "SLICERBRIDGE_QIDI_STUDIO": "${user_config.qidi_studio}"
+      }
+    }
+  }
+}

@@ -5,9 +5,12 @@
 Python 3.10 or newer, then either:
 
 ```bash
-pipx install git+https://github.com/UnicornGraveyard/SlicerBridge             # the CLI
-pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"  # and the MCP server
+pipx install slicerbridge                                        # from PyPI: the CLI and the MCP server
+pipx install git+https://github.com/UnicornGraveyard/SlicerBridge   # the latest from GitHub
+uvx slicerbridge doctor                                          # or run it without installing
 ```
+
+For Claude, the plugin is the easiest route: see [mcp.md](mcp.md).
 
 or, to work on it:
 
@@ -16,7 +19,7 @@ git clone https://github.com/UnicornGraveyard/SlicerBridge && cd SlicerBridge
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mcp]"
 ```
 
-Its only dependency is lxml. [Panda2Prusa](https://github.com/liutang/Panda2Prusa) is vendored at a pinned
+Its dependencies are lxml and the MCP Python SDK. [Panda2Prusa](https://github.com/liutang/Panda2Prusa) is vendored at a pinned
 commit (`slicerbridge/_vendor/panda2prusa/VENDORED.md`).
 
 ## The slicers

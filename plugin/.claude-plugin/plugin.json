@@ -1,0 +1,77 @@
+{
+  "name": "slicerbridge",
+  "displayName": "SlicerBridge",
+  "version": "0.2.0",
+  "description": "Convert a multicolor 3MF project into a ready, checked file for every multicolor printer: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa and the Snapmaker U1.",
+  "author": {
+    "name": "Unicorn Graveyard",
+    "url": "https://unicorngraveyard.com"
+  },
+  "homepage": "https://github.com/UnicornGraveyard/SlicerBridge",
+  "repository": "https://github.com/UnicornGraveyard/SlicerBridge",
+  "license": "GPL-3.0-or-later",
+  "keywords": [
+    "3d-printing",
+    "3mf",
+    "multicolor",
+    "bambu-studio",
+    "orcaslicer",
+    "prusaslicer",
+    "creality",
+    "anycubic",
+    "qidi",
+    "elegoo",
+    "flashforge",
+    "snapmaker"
+  ],
+  "userConfig": {
+    "orcaslicer": {
+      "type": "string",
+      "title": "OrcaSlicer location",
+      "description": "Where OrcaSlicer 2.4.2, which writes the files for Creality, Elegoo, Anycubic, Flashforge and QIDI printers is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "bambu_studio": {
+      "type": "string",
+      "title": "Bambu Studio location",
+      "description": "Where Bambu Studio, which writes the files for Bambu Lab printers is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "prusaslicer": {
+      "type": "string",
+      "title": "PrusaSlicer location",
+      "description": "Where PrusaSlicer, which builds the Prusa printer profiles is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "creality_print": {
+      "type": "string",
+      "title": "Creality Print location",
+      "description": "Where Creality Print, for brand-check only is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "elegooslicer": {
+      "type": "string",
+      "title": "ElegooSlicer location",
+      "description": "Where ElegooSlicer, for brand-check only is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "anycubic_slicer_next": {
+      "type": "string",
+      "title": "Anycubic Slicer Next location",
+      "description": "Where Anycubic Slicer Next, for brand-check only is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "flash_studio": {
+      "type": "string",
+      "title": "Flash Studio location",
+      "description": "Where Flash Studio (Orca-Flashforge), for brand-check only is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
+    "qidi_studio": {
+      "type": "string",
+      "title": "QIDI Studio location",
+      "description": "Where QIDI Studio, for brand-check only is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    }
+  }
+}

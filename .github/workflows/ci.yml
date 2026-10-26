@@ -24,3 +24,22 @@ jobs:
       - run: pip install -e ".[dev,mcp]"
       - run: ruff check .
       - run: pytest -q
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build and check the package
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - name: The built wheel installs and runs, MCP server included
+        run: |
+          python -m venv /tmp/wheel && /tmp/wheel/bin/pip install dist/*.whl
+          /tmp/wheel/bin/slicerbridge printers -p u1
+          /tmp/wheel/bin/python -c "import slicerbridge.mcp_server"
+

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 (2026-10-26)
+
+- On PyPI: `pipx install slicerbridge`, or `uvx slicerbridge` without installing.
+- A Claude plugin (`plugin/`): the MCP server plus a skill that teaches Claude the workflow, with settings for
+  where each slicer is installed. Install it with `/plugin marketplace add UnicornGraveyard/SlicerBridge`.
+- In the MCP Registry as `io.github.UnicornGraveyard/slicerbridge`.
+- `slicerbridge mcp` starts the MCP server; the MCP SDK is now a regular dependency (`slicerbridge[mcp]`
+  still installs).
+- Releases are a tag: `.github/workflows/release.yml` publishes to PyPI, then the MCP Registry, then GitHub.
+
 ## 0.1.1 (2026-10-26)
 
 - Any to any: projects saved by OrcaSlicer, QIDI Studio, Anycubic Slicer Next, ElegooSlicer and Flash Studio are

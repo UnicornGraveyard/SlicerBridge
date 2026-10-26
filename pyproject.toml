@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,7 +12,8 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "Unicorn Graveyard" }]
 requires-python = ">=3.10"
 # Panda2Prusa (MIT) is vendored at a pinned commit: slicerbridge/_vendor/panda2prusa/VENDORED.md.
-dependencies = ["lxml>=4.9"]
+# mcp is a dependency, not an extra, so `uvx slicerbridge mcp` runs the MCP server as published.
+dependencies = ["lxml>=4.9", "mcp>=1.2,<3"]
 keywords = ["3mf", "3d-printing", "multicolor", "bambu-studio", "orcaslicer", "prusaslicer", "creality",
             "elegoo", "anycubic", "flashforge", "qidi", "snapmaker", "converter"]
 classifiers = [
@@ -25,7 +26,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.2,<3"]
+mcp = []  # kept so `pip install slicerbridge[mcp]` still works
 dev = ["pytest>=8", "ruff==0.17.2"]  # exact: a new ruff changes what lint checks; Dependabot proposes bumps
 
 [project.scripts]
@@ -43,7 +44,7 @@ version = { attr = "slicerbridge.__version__" }
 include = ["slicerbridge*"]
 
 [tool.setuptools.package-data]
-slicerbridge = ["data/u1/*"]
+slicerbridge = ["data/u1/*", "_vendor/panda2prusa/LICENSE", "_vendor/panda2prusa/VENDORED.md"]
 
 [tool.ruff]
 line-length = 120

@@ -1,0 +1,90 @@
+name: Release
+
+# Push a tag v<version> to release: PyPI, then the MCP Registry, then a GitHub release.
+# docs/releasing.md has the steps and the one-time setup.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: The tag, package, plugin and registry metadata agree on the version
+        run: python scripts/release.py check "${GITHUB_REF_NAME#v}"
+      - name: Test
+        run: |
+          pip install -e ".[dev]"
+          ruff check .
+          pytest -q
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/slicerbridge/
+    permissions:
+      id-token: write  # PyPI trusted publishing: no token is stored anywhere
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+
+  mcp-registry:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # GitHub OIDC proves the io.github.UnicornGraveyard namespace
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install mcp-publisher
+        run: curl -sSfL https://github.com/modelcontextprotocol/registry/releases/download/v1.8.5/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
+      - name: Log in with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        # The registry checks the package on PyPI, which can take a minute to show a new version.
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            ./mcp-publisher publish && exit 0
+            echo "PyPI may not show ${GITHUB_REF_NAME} yet; trying again in 30 s"
+            sleep 30
+          done
+          exit 1
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Create the release with the CHANGELOG's notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release.py notes "$GITHUB_REF_NAME" > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --title "SlicerBridge $GITHUB_REF_NAME" --notes-file notes.md

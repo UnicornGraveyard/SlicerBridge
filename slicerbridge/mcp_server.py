@@ -1,8 +1,8 @@
 """
 mcp_server.py -- SlicerBridge as a local MCP server, for AI assistants.
 
-    pip install "slicerbridge[mcp]"
-    slicerbridge-mcp                   # speaks MCP over stdio; add it to your assistant's MCP config
+    uvx slicerbridge mcp               # speaks MCP over stdio; add it to your assistant's MCP config
+    slicerbridge-mcp                   # the same, once installed (pipx install slicerbridge)
 
 It runs on your own machine, with your own slicers, over stdio: nothing is
 uploaded or hosted, and it only reads and writes the paths you give it. Each
@@ -30,7 +30,7 @@ try:
         from mcp.server.fastmcp import FastMCP as MCPServer  # mcp 1.x
     from mcp.types import ToolAnnotations
 except ImportError as e:  # the server is an optional extra
-    raise SystemExit('the MCP server needs the mcp package: pip install "slicerbridge[mcp]"') from e
+    raise SystemExit("the MCP server needs the mcp package: pip install slicerbridge again") from e
 
 from .cli import main as cli_main
 from .printers import SETS

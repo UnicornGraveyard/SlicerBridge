@@ -1,40 +1,54 @@
 # SlicerBridge for AI assistants (MCP)
 
-`slicerbridge-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An assistant connected
-to it can look at a Bambu project, convert it for the printers you name, and read every check and warning, the
-same as the CLI prints.
+`slicerbridge mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An assistant connected
+to it can look at a multicolor 3MF project, convert it for the printers you name, and read every check and
+warning, the same as the CLI prints.
 
 It runs locally over stdio, with your slicers. Nothing is uploaded, and it reads and writes only the paths it's
-given.
+given ([privacy](privacy.md)).
 
-## Install
+## Claude Code and Cowork: the plugin
 
-```bash
-pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"
+The SlicerBridge plugin adds the server and a skill that teaches Claude the workflow (inspect, convert, check,
+never resize, never merge colors). It needs [uv](https://docs.astral.sh/uv/), which runs the server.
+
+```text
+/plugin marketplace add UnicornGraveyard/SlicerBridge
+/plugin install slicerbridge@slicerbridge
 ```
 
-### Claude Code
+SlicerBridge looks for each slicer in `/Applications`. If one is elsewhere, set its location in the plugin's
+settings: `/plugin`, select SlicerBridge, **Configure**. An empty setting means `/Applications`.
 
-```bash
-claude mcp add slicerbridge -- slicerbridge-mcp
-```
+The plugin runs `uvx slicerbridge==<its version> mcp`: an exact version, so an update to the plugin is an update
+to the server too.
 
-### Claude Desktop and other clients
+## Claude Desktop chats and other MCP clients
 
-Add it to the client's MCP config (for Claude Desktop, `claude_desktop_config.json`):
+Add it to the client's MCP config. For Claude Desktop that's `claude_desktop_config.json` (Settings, Developer,
+Edit Config); restart Claude Desktop afterwards.
 
 ```json
 {
   "mcpServers": {
     "slicerbridge": {
-      "command": "slicerbridge-mcp",
+      "command": "uvx",
+      "args": ["slicerbridge", "mcp"],
       "env": { "SLICERBRIDGE_ORCASLICER": "/Applications/OrcaSlicer.app" }
     }
   }
 }
 ```
 
-Set any of the environment variables from [install.md](install.md) in `env`.
+Set any of the environment variables from [install.md](install.md) in `env`. A GUI app may not find `uvx` on
+its `PATH`: give its full path (`which uvx`), or install SlicerBridge (`pipx install slicerbridge`) and use the
+full path of `slicerbridge-mcp`.
+
+### Claude Code without the plugin
+
+```bash
+claude mcp add slicerbridge -- uvx slicerbridge mcp
+```
 
 ## Tools
 

@@ -2,6 +2,8 @@
 
 **Any multicolor 3MF project in. A ready, checked file for every multicolor printer out.**
 
+<!-- mcp-name: io.github.UnicornGraveyard/slicerbridge -->
+
 [![CI](https://github.com/UnicornGraveyard/SlicerBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/UnicornGraveyard/SlicerBridge/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
@@ -88,7 +90,8 @@ SlicerBridge runs on **macOS** today (Linux and Windows: [help wanted](docs/inst
 Python 3.10 or newer.
 
 ```bash
-pipx install git+https://github.com/UnicornGraveyard/SlicerBridge
+pipx install slicerbridge                                    # or: uv tool install slicerbridge
+pipx install git+https://github.com/UnicornGraveyard/SlicerBridge   # the latest from GitHub
 ```
 
 It builds each printer's settings with that printer's slicer, so install the ones you need:
@@ -126,16 +129,23 @@ slicerbridge brand-check "out/My Model"              # slice each file in its ma
 - **Resize anything.** Size is never a reason to skip a printer either: the downloader scales it in their slicer.
 - **Write a file that failed a check**, or overwrite a file it didn't write (those move to `_previous/`).
 
-## Use it from an AI assistant (MCP)
+## Use it from Claude or another AI assistant
 
-SlicerBridge includes a local [MCP](https://modelcontextprotocol.io) server, so an assistant such as Claude can
-inspect a model, convert it, and read the check results for you. It runs on your machine over stdio: nothing is
-uploaded.
+SlicerBridge includes a local [MCP](https://modelcontextprotocol.io) server, so an assistant can inspect a
+model, convert it for the printers you name, and read the check results for you. It runs on your machine over
+stdio, with your slicers: nothing is uploaded.
 
-```bash
-pipx install "slicerbridge[mcp] @ git+https://github.com/UnicornGraveyard/SlicerBridge"
-claude mcp add slicerbridge -- slicerbridge-mcp     # Claude Code; other clients: docs/mcp.md
+**Claude Code and Cowork:** install the SlicerBridge plugin, which adds the server and a skill that teaches
+Claude the workflow. It needs [uv](https://docs.astral.sh/uv/).
+
+```text
+/plugin marketplace add UnicornGraveyard/SlicerBridge
+/plugin install slicerbridge@slicerbridge
 ```
+
+**Any other MCP client:** run `uvx slicerbridge mcp` (or `slicerbridge mcp` once installed). Setup for Claude
+Desktop and others: [docs/mcp.md](docs/mcp.md). It's also listed in the
+[MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.UnicornGraveyard/slicerbridge`.
 
 ## How it works
 

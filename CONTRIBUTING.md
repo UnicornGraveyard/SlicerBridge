@@ -47,5 +47,7 @@ Run them before a pull request that changes an engine, a check or the printer ta
 - Update the docs and the README's printer table when you change what users see.
 - `pytest` and `ruff check .` pass; CI runs both.
 
+Releases: [docs/releasing.md](docs/releasing.md).
+
 By contributing you agree that your contribution is licensed under the GPL v3 or later, like the rest of the
 project.

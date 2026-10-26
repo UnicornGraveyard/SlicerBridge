@@ -1,0 +1,79 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.UnicornGraveyard/slicerbridge",
+  "title": "SlicerBridge",
+  "description": "Convert a multicolor 3MF project into a ready, checked file for every multicolor printer.",
+  "repository": {
+    "url": "https://github.com/UnicornGraveyard/SlicerBridge",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/UnicornGraveyard/SlicerBridge",
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "slicerbridge",
+      "version": "0.2.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "SLICERBRIDGE_ORCASLICER",
+          "description": "Where OrcaSlicer 2.4.2, which writes the files for Creality, Elegoo, Anycubic, Flashforge and QIDI printers is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_BAMBU_STUDIO",
+          "description": "Where Bambu Studio, which writes the files for Bambu Lab printers is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_PRUSASLICER",
+          "description": "Where PrusaSlicer, which builds the Prusa printer profiles is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_CREALITY_PRINT",
+          "description": "Where Creality Print, for brand-check only is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_ELEGOOSLICER",
+          "description": "Where ElegooSlicer, for brand-check only is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_ANYCUBIC_SLICER_NEXT",
+          "description": "Where Anycubic Slicer Next, for brand-check only is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_FLASH_STUDIO",
+          "description": "Where Flash Studio (Orca-Flashforge), for brand-check only is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_QIDI_STUDIO",
+          "description": "Where QIDI Studio, for brand-check only is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

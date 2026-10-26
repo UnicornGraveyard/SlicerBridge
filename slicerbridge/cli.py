@@ -14,6 +14,7 @@ Anycubic Slicer Next, Flash Studio, QIDI Studio), including any file SlicerBridg
     slicerbridge brand-check "out/My Model"                # slice each file in its brand's own slicer
     slicerbridge templates --refresh --printers all        # after updating a slicer
     slicerbridge doctor                                    # what's installed, where things are kept
+    slicerbridge mcp                                       # the MCP server, for AI assistants
 """
 from __future__ import annotations
 
@@ -274,6 +275,12 @@ def cmd_doctor(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(a: argparse.Namespace) -> int:
+    from . import mcp_server
+    mcp_server.main()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="slicerbridge", description=__doc__.split("\n\n")[0].strip(),
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -321,6 +328,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="what's installed and where things are kept")
     d.set_defaults(run=cmd_doctor)
+
+    m = sub.add_parser("mcp", help="run the MCP server over stdio, for AI assistants (docs/mcp.md)")
+    m.set_defaults(run=cmd_mcp)
     return ap
 
 
