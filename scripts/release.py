@@ -9,11 +9,12 @@ release.py -- the checks and notes for a release (.github/workflows/release.yml)
 A release is a tag v<version>. The version also lives in the package and the
 MCP Registry metadata, and `check` refuses a release where they disagree.
 
-The Claude plugin runs the version locked in plugin/uv.lock, and a lock can only
-name a version that's already on PyPI, so the plugin moves after the release:
-`plugin` sets its manifest and pin and relocks with uv. Until then it keeps
-running the previous version, so `check` only asks that the plugin's manifest,
-pin and lock agree with each other. Standard library only, plus uv for `plugin`.
+The Claude plugin's launcher pins a version and ships a uv.lock for it, and a
+lock can only name a version that's already on PyPI, so the plugin moves after
+the release: `plugin` sets its manifest and pins and relocks with uv. Until then
+it keeps running the previous version, so `check` only asks that the plugin's
+manifest, pins and lock agree with each other. Standard library only, plus uv
+for `plugin`.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugin"
 MANIFEST = PLUGIN / ".claude-plugin" / "plugin.json"
+LAUNCHER = PLUGIN / ".mcp.json"
 PYPROJECT = PLUGIN / "pyproject.toml"
 LOCK = PLUGIN / "uv.lock"
 
@@ -46,8 +48,10 @@ def plugin_versions() -> dict[str, str]:
     pyproject = PYPROJECT.read_text()
     locked = re.search(r'^name = "slicerbridge"\nversion = "([^"]+)"', LOCK.read_text(), re.M)
     pin = re.search(r'"slicerbridge==([^"]+)"', pyproject)
+    launch = re.search(r'"slicerbridge==([^"]+)"', LAUNCHER.read_text())
     return {
         "plugin/.claude-plugin/plugin.json": json.loads(MANIFEST.read_text())["version"],
+        "plugin/.mcp.json launch pin": launch.group(1) if launch else "not pinned",
         "plugin/pyproject.toml version": re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1),
         "plugin/pyproject.toml pin": pin.group(1) if pin else "not pinned",
         "plugin/uv.lock": locked.group(1) if locked else "not locked",
@@ -79,14 +83,16 @@ def check(version: str) -> list[str]:
 
 def move_plugin(version: str) -> list[str]:
     """Point the plugin at `version` (already on PyPI) and relock; returns the problems left."""
-    manifest, pyproject = MANIFEST.read_text(), PYPROJECT.read_text()
+    manifest, launcher, pyproject = MANIFEST.read_text(), LAUNCHER.read_text(), PYPROJECT.read_text()
     MANIFEST.write_text(re.sub(r'("version": ")[^"]+(")', rf"\g<1>{version}\2", manifest, count=1))
+    LAUNCHER.write_text(re.sub(r'"slicerbridge==[^"]+"', f'"slicerbridge=={version}"', launcher))
     PYPROJECT.write_text(re.sub(r'"slicerbridge==[^"]+"', f'"slicerbridge=={version}"',
                                 re.sub(r'^version = "[^"]+"', f'version = "{version}"', pyproject, count=1, flags=re.M)))
     # --upgrade: every dependency moves to its newest release too, so the plugin's are current at each release
     lock = subprocess.run(["uv", "lock", "--upgrade", "--project", str(PLUGIN)], capture_output=True, text=True)
     if lock.returncode != 0:
         MANIFEST.write_text(manifest)
+        LAUNCHER.write_text(launcher)
         PYPROJECT.write_text(pyproject)
         return [f"uv lock failed, plugin left as it was (is {version} on PyPI yet?):\n{lock.stderr.strip()}"]
     return plugin_problems()

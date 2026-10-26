@@ -1,13 +1,9 @@
 {
   "mcpServers": {
     "slicerbridge": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--frozen",
-        "--project",
-        "${CLAUDE_PLUGIN_ROOT}",
-        "slicerbridge",
+        "slicerbridge==0.2.0",
         "mcp"
       ],
       "env": {

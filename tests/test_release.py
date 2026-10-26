@@ -1,4 +1,4 @@
-"""The release pieces agree: one version everywhere, a plugin that runs its lock, and every slicer setting reaches the code."""
+"""The release pieces agree: one version everywhere, a plugin pinned and locked, and every slicer setting reaches the code."""
 import importlib.util
 import json
 import re
@@ -21,14 +21,16 @@ def test_the_changelog_has_this_version():
 
 
 def test_the_plugin_names_one_version():
-    """Its manifest, pin and lock agree. It may trail the package: it moves once a release is on PyPI."""
+    """Its manifest, pins and lock agree. It may trail the package: it moves once a release is on PyPI."""
     assert release.plugin_problems() == []
 
 
-def test_the_plugin_launches_from_its_lockfile():
+def test_the_plugin_launches_a_pinned_uvx_package():
+    """The directory reads a lock only for `uvx <package>==<version>`; it can't follow `uv run`."""
     server = json.loads((ROOT / "plugin" / ".mcp.json").read_text())["mcpServers"]["slicerbridge"]
-    assert server["command"] == "uv"
-    assert server["args"] == ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}", "slicerbridge", "mcp"]
+    version = release.plugin_versions()["plugin/uv.lock"]
+    assert server["command"] == "uvx"
+    assert server["args"] == [f"slicerbridge=={version}", "mcp"]
 
 
 def test_the_lock_is_pypi_only_hashed_and_small_enough():

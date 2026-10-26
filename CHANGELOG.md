@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- The Claude plugin starts its server with `uv run --frozen` from its own `plugin/uv.lock`, which pins
-  SlicerBridge and every package it needs to an exact version and hash, instead of `uvx slicerbridge==<version>`.
-  It needs Python 3.12 or newer, which uv downloads when needed.
+- The Claude plugin ships a `uv.lock` beside its `uvx slicerbridge==<version>` launcher: SlicerBridge and every
+  package it needs at exact PyPI versions with their hashes, which Anthropic's directory checks for its Verified
+  badge.
 - After each release, `python scripts/release.py plugin <version>` moves the plugin to it and relocks, so the
   plugin only ever names a version that's on PyPI.
 - The plugin has an icon: the Unicorn Graveyard logo, which isn't covered by the GPL.

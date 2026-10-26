@@ -20,9 +20,9 @@ never resize, never merge colors). It needs [uv](https://docs.astral.sh/uv/), wh
 SlicerBridge looks for each slicer in `/Applications`. If one is elsewhere, set its location in the plugin's
 settings: `/plugin`, select SlicerBridge, **Configure**. An empty setting means `/Applications`.
 
-The plugin runs the server with `uv run --frozen` from its own `plugin/uv.lock`, which pins SlicerBridge and
-every package it needs to an exact version and hash from PyPI: an update to the plugin is an update to the
-server too. It needs Python 3.12 or newer, which uv downloads if your computer doesn't have it.
+The plugin runs `uvx slicerbridge==<its version> mcp`: an exact version, so an update to the plugin is an update
+to the server too. Beside it, `plugin/uv.lock` records that version and every package it needs at exact
+versions with their PyPI hashes, which Anthropic's directory checks.
 
 ## Claude Desktop chats and other MCP clients
 

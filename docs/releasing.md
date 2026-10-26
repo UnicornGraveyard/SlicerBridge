@@ -21,7 +21,8 @@ A release is a git tag. Pushing `v<version>` runs `.github/workflows/release.yml
    git tag v0.2.0 && git push origin v0.2.0
    ```
 4. Once the release workflow has finished and the version is on PyPI, move the Claude plugin to it. This sets
-   the plugin's manifest and pin, and relocks `plugin/uv.lock` with every dependency at its newest release:
+   the version in the plugin's manifest, its `uvx` launch command and `plugin/pyproject.toml`, and relocks
+   `plugin/uv.lock` with every dependency at its newest release:
    ```bash
    python scripts/release.py plugin 0.2.0
    git commit -am "Plugin: run 0.2.0" && git push

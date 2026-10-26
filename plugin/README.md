@@ -22,10 +22,10 @@ plugin's settings: `/plugin`, select SlicerBridge, **Configure**. Leave a settin
 
 ## What it runs, reads and sends
 
-- It starts its MCP server with `uv run --frozen` from the plugin's `uv.lock`, which pins the
-  [slicerbridge](https://pypi.org/project/slicerbridge/) package and everything it needs to exact versions and
-  hashes. uv downloads them from PyPI the first time, into a `.venv` in the plugin's folder, along with
-  Python 3.12 if your computer has no Python that new.
+- It starts its MCP server with `uvx slicerbridge==<version> mcp`, the version in the plugin's manifest, which
+  downloads that exact version of the [slicerbridge](https://pypi.org/project/slicerbridge/) package from PyPI
+  the first time. The plugin's `uv.lock` records it and everything it needs at exact versions with their
+  hashes.
 - It runs the command lines of the slicers installed on your computer, to build each printer's settings and
   to slice files when you ask it to.
 - It reads the 3MF files you name and writes the files it makes into the folder you name, or into `out/`
