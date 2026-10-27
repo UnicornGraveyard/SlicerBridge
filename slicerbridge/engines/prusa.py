@@ -428,7 +428,7 @@ def ensure_datadir() -> Path:
         else:
             raise Refusal("no PrusaResearch.ini vendor bundle found (install PrusaSlicer)")
     models = "\n".join(f"model:{p.model} = {p.variant}" for p in PRINTERS.values())
-    (DATADIR / "PrusaSlicer.ini").write_text(f"[vendor:PrusaResearch]\n{models}\n")
+    (DATADIR / "PrusaSlicer.ini").write_text(f"[vendor:PrusaResearch]\n{models}\n", encoding="utf-8")
     return DATADIR
 
 
@@ -448,7 +448,7 @@ def refresh_profile(key: str) -> Path:
     if r.returncode or not dest.exists():
         raise Refusal(f"PrusaSlicer could not build the {key} profile:\n{r.stdout}{r.stderr}")
     bundle = DATADIR / "vendor" / "PrusaResearch.ini"
-    ver = re.search(r"^config_version = (\S+)", bundle.read_text(errors="replace"), re.M)
+    ver = re.search(r"^config_version = (\S+)", bundle.read_text(encoding="utf-8", errors="replace"), re.M)
     print(f"  profile {key:6} <- {p.preset} / {p.print_preset} / {p.filament_preset}"
           f"  (Prusa bundle {ver.group(1) if ver else '?'})")
     return dest
@@ -458,7 +458,7 @@ def load_profile(key: str) -> Profile:
     path = PROFILES / f"{key}.ini"
     if not path.exists():
         refresh_profile(key)
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     header = lines[0].lstrip("#").strip()
     items = []
     for line in lines[1:]:
@@ -864,7 +864,7 @@ def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: S
         manifold = re.findall(r"^manifold = (\w+)", r.stdout, re.M)
         loaded = {}
         if saved.exists():
-            for line in saved.read_text().splitlines():
+            for line in saved.read_text(encoding="utf-8").splitlines():
                 k, sep, v = line.partition(" = ")
                 if sep:
                     loaded[k] = v

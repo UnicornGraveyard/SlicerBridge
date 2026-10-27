@@ -47,7 +47,7 @@ def own_presets(slicer: Slicer) -> frozenset:
     for f in slicer.profiles.rglob("*.json"):
         kind = next((p for p in f.parts if p in KINDS.values()), None)
         try:
-            d = json.loads(f.read_text()) if kind else None
+            d = json.loads(f.read_text(encoding="utf-8")) if kind else None
         except (ValueError, OSError):
             continue
         if isinstance(d, dict) and d.get("name") and d.get("instantiation") == "true":

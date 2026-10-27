@@ -58,7 +58,7 @@ def preset_index(vendor: str, slicer: Slicer = SLICERS["orca"]) -> dict:
         for kind in kinds:
             for f in (slicer.profiles / folder / kind).rglob("*.json"):
                 try:
-                    name = json.loads(f.read_text()).get("name")
+                    name = json.loads(f.read_text(encoding="utf-8")).get("name")
                 except (ValueError, OSError):
                     continue
                 if name:
@@ -75,7 +75,7 @@ def filament_keys(settings: dict, slicer: Slicer) -> list[str]:
     keys = set()
     for f in slicer.profiles.glob("*/filament/**/*.json"):
         try:
-            d = json.loads(f.read_text())
+            d = json.loads(f.read_text(encoding="utf-8"))
         except (ValueError, OSError):
             continue
         if isinstance(d, dict):
@@ -152,7 +152,7 @@ def _cube(path: Path) -> None:
     for face in faces:
         lines += ["facet normal 0 0 0", "outer loop", *(f"vertex {v[i][0]} {v[i][1]} {v[i][2]}" for i in face),
                   "endloop", "endfacet"]
-    path.write_text("\n".join(lines + ["endsolid cube", ""]))
+    path.write_text("\n".join(lines + ["endsolid cube", ""]), encoding="utf-8")
 
 
 def flatten(kind: str, name: str, index: dict) -> dict:
@@ -162,7 +162,7 @@ def flatten(kind: str, name: str, index: dict) -> dict:
         if name in seen or (kind, name) not in index:
             raise Refusal(f"{kind} preset '{name}' is missing from its own inheritance chain")
         seen.add(name)
-        d = json.loads(index[(kind, name)].read_text())
+        d = json.loads(index[(kind, name)].read_text(encoding="utf-8"))
         chain.append(d)
         name = d.get("inherits") or ""
     out: dict = {}
@@ -195,7 +195,7 @@ def _for_cli(kind: str, name: str, index: dict, tmp: Path, printer: str | None =
     if printer and not d.get("compatible_printers") and not d.get("compatible_printers_condition"):
         d["compatible_printers"] = [printer]
     out = tmp / f"{kind}-{len(list(tmp.glob(f'{kind}-*')))}.json"
-    out.write_text(json.dumps(d, indent=4))
+    out.write_text(json.dumps(d, indent=4), encoding="utf-8")
     return out
 
 
@@ -366,7 +366,7 @@ def build(key: str) -> list[str]:
         "machine": p.machine, "process": p.process, "filaments": p.filaments,
         "filament_keys": filament_keys(settings, slicer),
         "slicer_adjusted": {t: a for t, a in adjusted.items() if a},
-    }, indent=2) + "\n")
+    }, indent=2) + "\n", encoding="utf-8")
     return []
 
 
@@ -383,14 +383,14 @@ def load(key: str) -> tuple[dict, dict]:
     if not slicer.installed:
         env = "SLICERBRIDGE_" + slicer.name.upper().replace(" ", "_")
         raise Refusal(f"{slicer.name} isn't at {slicer.app}: install it, or point {env} at it")
-    meta = json.loads((dest / "meta.json").read_text()) if (dest / "meta.json").exists() else {}
+    meta = json.loads((dest / "meta.json").read_text(encoding="utf-8")) if (dest / "meta.json").exists() else {}
     stale = (meta.get("slicer_version") != app_version(slicer) or meta.get("machine") != p.machine
              or meta.get("process") != p.process or meta.get("filaments") != p.filaments)
     if stale:
         problems = build(key)
         if problems:
             raise Refusal("\n".join(problems))
-    meta = json.loads((dest / "meta.json").read_text())
+    meta = json.loads((dest / "meta.json").read_text(encoding="utf-8"))
     settings = {}
     for ftype in PRINTERS[key].filaments:
         with zipfile.ZipFile(dest / f"{ftype}.3mf") as z:
