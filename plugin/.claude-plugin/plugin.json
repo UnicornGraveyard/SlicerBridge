@@ -2,7 +2,7 @@
   "name": "slicerbridge",
   "displayName": "SlicerBridge",
   "version": "0.3.1",
-  "description": "Convert a multicolor 3MF project into a ready, checked file for every multicolor printer: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa and the Snapmaker U1.",
+  "description": "Convert a multicolor 3MF project into a ready, checked file for every multicolor printer: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker, Prusa and the Snapmaker U1.",
   "author": {
     "name": "Unicorn Graveyard",
     "url": "https://unicorngraveyard.com"
@@ -22,6 +22,7 @@
     "qidi",
     "elegoo",
     "flashforge",
+    "wondermaker",
     "snapmaker"
   ],
   "userConfig": {

@@ -34,10 +34,12 @@ def test_orca_family_converts_and_slices(project, tmp_path, key):
     assert orca.convert(project, "Cube", [key], tmp_path / "out", slice_it=True) == (1, 0)
 
 
-def test_bambu_converts_and_slices(project, tmp_path):
+# One AMS printer, and one with two nozzles that each reach only part of the bed.
+@pytest.mark.parametrize("key", ["a1", "x2d"])
+def test_bambu_converts_and_slices(project, tmp_path, key):
     need("bambu")
     from slicerbridge.engines import orca
-    assert orca.convert(project, "Cube", ["a1"], tmp_path / "out", slice_it=True) == (1, 0)
+    assert orca.convert(project, "Cube", [key], tmp_path / "out", slice_it=True) == (1, 0)
 
 
 def test_prusa_printers_in_one_run(project, tmp_path):

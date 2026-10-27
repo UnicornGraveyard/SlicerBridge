@@ -223,8 +223,13 @@ PRINTERS = {
                          "ABS": "Generic ABS @BBL H2S 0.4 nozzle"}, 16, "bambu"),
     "h2d":      Printer("Bambu Lab H2D", "BBL", "Bambu Lab H2D 0.4 nozzle", "0.16mm Standard @BBL H2D",
                         _generic("Generic ", " @BBL H2D"), 16, "bambu"),
+    "h2dpro":   Printer("Bambu Lab H2D Pro", "BBL", "Bambu Lab H2D Pro 0.4 nozzle", "0.16mm Standard @BBL H2DP",
+                        _generic("Generic ", " @BBL H2DP"), 16, "bambu"),
     "h2c":      Printer("Bambu Lab H2C", "BBL", "Bambu Lab H2C 0.4 nozzle", "0.16mm Standard @BBL H2C",
                         _generic("Generic ", " @BBL H2C 0.4 nozzle"), 16, "bambu"),
+    # Two nozzles, like the H2D: the right one is fed by Bowden, for supports, and both print from the AMS.
+    "x2d":      Printer("Bambu Lab X2D", "BBL", "Bambu Lab X2D 0.4 nozzle", "0.16mm Standard @BBL X2D",
+                        _generic("Generic ", " @BBL X2D 0.4 nozzle"), 16, "bambu"),
 
     # ---- Creality (CFS), from OrcaSlicer.
     "k2plus":   Printer("Creality K2 Plus", "Creality", "Creality K2 Plus 0.4 nozzle",
@@ -266,13 +271,17 @@ PRINTERS = {
                          "PETG": "Generic PETG @Anycubic Kobra X 0.4 nozzle",
                          "ABS": "Anycubic ABS @Anycubic Kobra X 0.4 nozzle"}),
 
-    # ---- Flashforge: the AD5X (IFS), and the Creator 5, a 4-toolhead toolchanger.
+    # ---- Flashforge: the AD5X (IFS), and the Creator 5 and 5 Pro, 4-toolhead toolchangers.
     "ad5x":     Printer("Flashforge AD5X", "Flashforge", "Flashforge AD5X 0.4 nozzle", "0.16mm Standard @FF AD5X",
                         _generic("Flashforge Generic ", "")),
     "creator5": Printer("Flashforge Creator 5", "Flashforge", "Flashforge Creator 5 0.4 nozzle",
                         "0.20mm Standard @FF C5",
                         {"PLA": "Generic PLA @FF C5", "PETG": "Flashforge PETG Pro @FF C5",
                          "ABS": "Flashforge ABS Basic @FF C5"}),
+    "creator5pro": Printer("Flashforge Creator 5 Pro", "Flashforge", "Flashforge Creator 5 Pro 0.4 nozzle",
+                           "0.20mm Standard @FF C5",
+                           {"PLA": "Generic PLA @FF C5P", "PETG": "Flashforge PETG Pro @FF C5P",
+                            "ABS": "Flashforge ABS Basic @FF C5P"}),
 
     # ---- QIDI (QIDI Box). Sold as the Plus4 and Max4; OrcaSlicer still calls them X-Plus 4 / X-Max 4.
     "q2":       Printer("QIDI Q2", "Qidi", "Qidi Q2 0.4 nozzle", "0.16mm Optimal @Qidi Q2",
@@ -283,6 +292,12 @@ PRINTERS = {
                         _generic("Qidi Generic ", " @Qidi X-Plus 4 0.4 nozzle")),
     "max4":     Printer("QIDI Max4", "Qidi", "Qidi X-Max 4 0.4 nozzle", "0.16mm Standard @X-Max 4",
                         _generic("Generic ", " @Qidi X-Max 4 0.4 nozzle")),
+
+    # ---- WonderMaker: the ZR Ultra S, a 4-toolhead toolchanger.
+    "zrultras": Printer("WonderMaker ZR Ultra S", "WonderMaker", "WonderMaker ZR Ultra S 0.4 nozzle",
+                        "0.16mm Optimal @WonderMaker ZR Ultra",
+                        {"PLA": "WonderMaker PLA Basic", "PETG": "WonderMaker PETG Basic",
+                         "ABS": "WonderMaker ABS @WonderMaker ZR Ultra S"}),
 }
 
 
@@ -345,7 +360,7 @@ def vendor_of(key: str) -> str:
 ALL = [*PRINTERS, *PRUSA_PRINTERS, "u1"]
 
 # Named selections for --printers, beside "all" and any vendor (bambu, creality,
-# elegoo, anycubic, flashforge, qidi, prusa, snapmaker). "popular": the printers
+# elegoo, anycubic, flashforge, qidi, wondermaker, prusa, snapmaker). "popular": the printers
 # most downloaders own, one file each.
 SETS = {
     "popular": ["a1mini", "a1", "p1s", "p2s", "x1c", "h2d",

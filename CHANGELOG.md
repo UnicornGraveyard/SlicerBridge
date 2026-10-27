@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Four more printers that change nozzles or toolheads: the Bambu Lab X2D and H2D Pro (two nozzles, written by
+  Bambu Studio), and the Flashforge Creator 5 Pro and WonderMaker ZR Ultra S (four toolheads, written by
+  OrcaSlicer). 34 printers in all. On Windows, OrcaSlicer 2.4.2's command line crashes opening any
+  4-toolhead project, so the Creator 5, the 5 Pro and the ZR Ultra S are written on a Mac.
+
 ## 0.3.1 (2026-10-27)
 
 - `convert --suffix "My Shop"` (and the MCP tool's `suffix`) names files `<name> - <printer> - My Shop.3mf`:

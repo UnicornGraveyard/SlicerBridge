@@ -31,7 +31,7 @@ from the presets bundled with your install, the first time you convert for it (o
 | Printers | Slicer | Looked for on macOS | Looked for on Windows | Override with |
 |---|---|---|---|---|
 | Bambu Lab | Bambu Studio | `/Applications/BambuStudio.app` | `C:\Program Files\Bambu Studio\bambu-studio.exe` | `SLICERBRIDGE_BAMBU_STUDIO` |
-| Creality, Elegoo, Anycubic, Flashforge, QIDI | OrcaSlicer **2.4.2** | `/Applications/OrcaSlicer.app` | `C:\Program Files\OrcaSlicer\orca-slicer.exe` | `SLICERBRIDGE_ORCASLICER` |
+| Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker | OrcaSlicer **2.4.2** | `/Applications/OrcaSlicer.app` | `C:\Program Files\OrcaSlicer\orca-slicer.exe` | `SLICERBRIDGE_ORCASLICER` |
 | Prusa | PrusaSlicer | `/Applications/PrusaSlicer.app`, `/Applications/Original Prusa Drivers/PrusaSlicer.app` | `C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe` | `SLICERBRIDGE_PRUSASLICER` |
 | Snapmaker U1 | none | built in | built in | |
 
@@ -98,8 +98,9 @@ It has written and sliced files for 28 printers on Windows 11 with Python 3.13, 
 
 What's different there:
 
-- **The Flashforge Creator 5 isn't written.** OrcaSlicer 2.4.2 for Windows crashes loading the preset it wrote
-  for it, so its settings can't be read back.
+- **The 4-toolhead toolchangers aren't written: the Flashforge Creator 5 and 5 Pro and the WonderMaker ZR
+  Ultra S.** OrcaSlicer 2.4.2's command line for Windows crashes opening any project for them, even one it
+  saved itself, so their settings can't be read back. Their templates build; write their files on a Mac.
 - **The Prusa CORE One INDX needs a newer Prusa bundle** than PrusaSlicer 2.9.6 ships (2.4.14). A PrusaSlicer
   that has never run hasn't downloaded one: start it once, or copy `PrusaResearch.ini` 2.5.0 or newer from
   [PrusaSlicer-settings-prusa-fff](https://github.com/prusa3d/PrusaSlicer-settings-prusa-fff/tree/main/PrusaResearch)

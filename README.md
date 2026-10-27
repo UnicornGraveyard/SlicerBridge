@@ -13,7 +13,7 @@ Elegoo Centauri Carbon, a QIDI Q2, a Prusa XL, a Snapmaker U1… and each of the
 their printer by hand, guessing at presets, and often losing the colors on the way.
 
 SlicerBridge takes the project from whichever slicer you made it in (Bambu Studio, OrcaSlicer, or a printer
-maker's own fork of either) and writes one file for each of 30 printers, named for that printer
+maker's own fork of either) and writes one file for each of 34 printers, named for that printer
 (`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Its files for Bambu Lab,
 OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every file:
 
@@ -54,7 +54,9 @@ colors, and save the project.
 | Bambu Lab X1 Carbon | `x1c` | 16 | Bambu Studio | — |
 | Bambu Lab H2S | `h2s` | 16 | Bambu Studio | — |
 | Bambu Lab H2D | `h2d` | 16 | Bambu Studio | — |
+| Bambu Lab H2D Pro | `h2dpro` | 16 | Bambu Studio | — |
 | Bambu Lab H2C | `h2c` | 16 | Bambu Studio | — |
+| Bambu Lab X2D | `x2d` | 16 | Bambu Studio | — |
 | Creality K2 Plus | `k2plus` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 Pro | `k2pro` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 SE | `k2se` | 4 | OrcaSlicer | Creality Print |
@@ -68,10 +70,12 @@ colors, and save the project.
 | Anycubic Kobra X | `kobrax` | 4 | OrcaSlicer | Anycubic Slicer Next |
 | Flashforge AD5X | `ad5x` | 4 | OrcaSlicer | Flash Studio |
 | Flashforge Creator 5 | `creator5` | 4 | OrcaSlicer | Flash Studio |
+| Flashforge Creator 5 Pro | `creator5pro` | 4 | OrcaSlicer | Flash Studio |
 | QIDI Q2 | `q2` | 4 | OrcaSlicer | QIDI Studio |
 | QIDI Q2C | `q2c` | 4 | OrcaSlicer | QIDI Studio |
 | QIDI Plus4 | `plus4` | 4 | OrcaSlicer | QIDI Studio |
 | QIDI Max4 | `max4` | 4 | OrcaSlicer | QIDI Studio |
+| WonderMaker ZR Ultra S | `zrultras` | 4 | OrcaSlicer | — |
 | Prusa MMU3 | `mmu3` | 5 | PrusaSlicer | — |
 | Prusa XL | `xl` | 5 | PrusaSlicer | — |
 | Prusa Core One INDX 4T | `indx4` | 4 | PrusaSlicer | — |
@@ -99,7 +103,7 @@ It builds each printer's settings with that printer's slicer, so install the one
 | To write files for | Install |
 |---|---|
 | Bambu Lab printers | [Bambu Studio](https://bambulab.com/en/download/studio) |
-| Creality, Elegoo, Anycubic, Flashforge, QIDI | [OrcaSlicer 2.4.2](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/v2.4.2) |
+| Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker | [OrcaSlicer 2.4.2](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/v2.4.2) |
 | Prusa printers | [PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/) |
 | Snapmaker U1 | nothing: its templates are built in |
 
@@ -121,7 +125,7 @@ slicerbridge brand-check "out/My Model"              # slice each file in its ma
 ```
 
 `--printers` takes `all`, `popular`, a vendor (`bambu`, `creality`, `elegoo`, `anycubic`, `flashforge`, `qidi`,
-`prusa`, `snapmaker`), or printer keys, comma-separated.
+`wondermaker`, `prusa`, `snapmaker`), or printer keys, comma-separated.
 
 ### What it won't do
 

@@ -24,6 +24,9 @@ def test_a_label_counts_only_as_a_whole_field():
     assert split_name("Dragon - QIDI Q2C - My Shop.3mf")[1] == "q2c"
     assert split_name("Dragon - Bambu Lab A1 mini - My Shop.3mf")[1] == "a1mini"
     assert split_name("Dragon - Anycubic Kobra 3 Max.3mf")[1] == "kobra3max"
+    assert split_name("Dragon - Bambu Lab H2D Pro.3mf")[1] == "h2dpro"
+    assert split_name("Dragon - Bambu Lab H2D - My Shop.3mf")[1] == "h2d"
+    assert split_name("Dragon - Flashforge Creator 5 Pro - Plate 2.3mf")[1] == "creator5pro"
     assert split_name("Dragon.3mf") == ("Dragon", None)
 
 
