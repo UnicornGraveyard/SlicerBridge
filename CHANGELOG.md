@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-10-27)
 
 - `convert --suffix "My Shop"` (and the MCP tool's `suffix`) names files `<name> - <printer> - My Shop.3mf`:
   model, printer, maker. `verify`, `brand-check` and converting a file again read the printer from either
