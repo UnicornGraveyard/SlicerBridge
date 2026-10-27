@@ -27,8 +27,8 @@ from pathlib import Path
 
 from . import __version__
 from .errors import Refusal
-from .printers import (ALL, BRAND_SLICERS, PRINTERS, PRUSA_PRINTERS, SETS, SLICERS, U1_LABEL, cache_dir,
-                       engine_of, label_of, printer_of, select, tools_of, vendor_of)
+from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir,
+                       engine_of, label_of, printer_of, select, split_name, tools_of, vendor_of)
 
 def _engine(name: str):
     """Import an engine only when it's used: they pull in Panda2Prusa and lxml."""
@@ -107,13 +107,9 @@ def _model(path: str) -> Path:
 
 
 def _default_name(src: Path) -> str:
-    """The file's name, without a printer SlicerBridge named it for: "Cube - QIDI Q2" is "Cube"."""
-    labels = sorted((label_of(k) for k in ALL), key=len, reverse=True)
-    stem = re.sub(r" - Plate \d+$", "", src.stem)
-    for label in labels:
-        if stem.endswith(f" - {label}"):
-            return stem[: -len(f" - {label}")]
-    return src.stem
+    """The file's name, without a printer SlicerBridge named it for, or what follows it:
+    "Cube - QIDI Q2" and "Cube - QIDI Q2 - Plate 2 - My Shop" are "Cube"."""
+    return split_name(src.name)[0]
 
 
 def cmd_convert(a: argparse.Namespace) -> int:
@@ -127,7 +123,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
     for engine, ks in _by_engine(keys).items():
         mod = _engine(engine)
         kwargs = {"explicit": explicit} if engine == "prusa" else {}
-        m, f = mod.convert(src, name, ks, _abs(a.out), a.prefix, a.slice, **kwargs)
+        m, f = mod.convert(src, name, ks, _abs(a.out), a.prefix, a.slice, suffix=a.suffix, **kwargs)
         made, failed = made + m, failed + f
     print(f"\n{made} file(s) written to {Path(a.out) / name}, {failed} refused or failed.")
     return 1 if failed else 0
@@ -173,8 +169,9 @@ def cmd_verify(a: argparse.Namespace) -> int:
         return 0
     bad = 0
     for f in files:
-        key = printer_of(f)
-        if key:
+        key = split_name(f.name)[1]
+        engine = engine_of(key) if key else None
+        if engine == "orca":
             try:
                 info, problems, warnings = orca_check.audit(f, src, key)
                 if a.slice and not problems:
@@ -182,9 +179,9 @@ def cmd_verify(a: argparse.Namespace) -> int:
                     info, problems, warnings = info + si, problems + sp, warnings + sw
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
-        elif f.name.endswith(f" - {U1_LABEL}.3mf"):
+        elif engine == "u1":
             (info, problems), warnings = u1_check.audit(f, src), []
-        elif any(p.label in f.name for p in PRUSA_PRINTERS.values()):
+        elif engine == "prusa":
             info, problems, warnings = [], [], ["Prusa files are checked while they're written: convert again to re-check"]
         else:
             info, problems, warnings = [], ["not named for a printer SlicerBridge knows (see slicerbridge printers)"], []
@@ -305,6 +302,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--printers", "-p", **which)
     c.add_argument("--out", "-o", default="out", help="output folder; files go in <out>/<name>/ (default: out)")
     c.add_argument("--prefix", default="", help='text before every file name, e.g. "My Shop - "')
+    c.add_argument("--suffix", default="", help='text after the printer in every file name, e.g. "My Shop" for '
+                                                '"Dragon - Prusa XL - My Shop.3mf"')
     c.add_argument("--slice", action="store_true", help="slice each file in its slicer before keeping it")
     c.add_argument("--map", help="Prusa only: explicit slot -> tool map, e.g. 1=1,10=2,11=3")
     c.set_defaults(run=cmd_convert)

@@ -311,19 +311,50 @@ def select(spec: list[str] | None, default: str = "popular") -> list[str]:
 BAMBU_TYPES = {"PLA": "PLA", "PETG": "PETG", "PETG-HF": "PETG", "ABS": "ABS"}
 
 
-def out_name(name: str, key: str, prefix: str = "", plate: str = "") -> str:
+def name_suffix(text: str) -> str:
+    """What --suffix adds after the printer: "Unicorn Graveyard" (or " - Unicorn Graveyard") is
+    " - Unicorn Graveyard", so the printer stays a field of its own that split_name() finds."""
+    text = text.strip()
+    if text.startswith("-"):
+        text = text[1:].strip()
+    return f" - {text}" if text else ""
+
+
+def out_name(name: str, key: str, prefix: str = "", plate: str = "", suffix: str = "") -> str:
     """The file name for model `name` on printer `key`: the printer named in full,
-    so a downloader can print and go without guessing which file is theirs."""
-    return f"{prefix}{name} - {label_of(key)}{plate}.3mf"
+    so a downloader can print and go without guessing which file is theirs.
+    `<prefix><name> - <printer>[ - Plate n][ - <suffix>].3mf`."""
+    return f"{prefix}{name} - {label_of(key)}{plate}{name_suffix(suffix)}.3mf"
 
 
-def out_path(out: Path, name: str, key: str, prefix: str = "") -> Path:
-    return out / name / out_name(name, key, prefix)
+def out_path(out: Path, name: str, key: str, prefix: str = "", suffix: str = "") -> Path:
+    return out / name / out_name(name, key, prefix, suffix=suffix)
+
+
+def split_name(filename: str) -> tuple[str, str | None]:
+    """(what comes before the printer, the printer key) of a file named by out_name(), with
+    or without a suffix after the printer; (the stem, None) when no printer is named.
+
+    A label counts where it's a whole " - " field: "QIDI Q2" isn't found in "QIDI Q2C",
+    nor "Bambu Lab A1" in "Bambu Lab A1 mini". Of several, the last one wins, so a
+    model named after a printer still reads right.
+    """
+    stem = filename[:-4] if filename.lower().endswith(".3mf") else filename
+    best = None
+    for key in ALL:
+        field = f" - {label_of(key)}"
+        start = stem.rfind(field)
+        while start >= 0:
+            rest = stem[start + len(field):]
+            if rest == "" or rest.startswith(" - "):
+                if best is None or start > best[0] or (start == best[0] and len(field) > best[2]):
+                    best = (start, key, len(field))
+                break
+            start = stem.rfind(field, 0, start)
+    return (stem[:best[0]], best[1]) if best else (stem, None)
 
 
 def printer_of(path: Path) -> str | None:
     """The orca-engine PRINTERS key a file is named for, if any."""
-    for key, p in PRINTERS.items():
-        if path.name.endswith(f" - {p.label}.3mf"):
-            return key
-    return None
+    key = split_name(path.name)[1]
+    return key if key in PRINTERS else None
