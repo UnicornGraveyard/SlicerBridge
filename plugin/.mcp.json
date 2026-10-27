@@ -3,7 +3,7 @@
     "slicerbridge": {
       "command": "uvx",
       "args": [
-        "slicerbridge==0.3.0",
+        "slicerbridge==0.3.1",
         "mcp"
       ],
       "env": {
