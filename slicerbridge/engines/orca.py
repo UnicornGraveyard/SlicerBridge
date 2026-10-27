@@ -634,8 +634,11 @@ def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
                 zout.writestr(item, data)
         (tmp / "out").mkdir()
         slicer = SLICERS[PRINTERS[key].slicer]
-        run = subprocess.run([str(slicer.binary), "--outputdir", str(tmp / "out"), "--export-3mf", "back.3mf", str(probe)],
-                             capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=600)
+        try:
+            run = subprocess.run([str(slicer.binary), "--outputdir", str(tmp / "out"), "--export-3mf", "back.3mf", str(probe)],
+                                 capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            raise Refusal(f"{slicer.name} hung reading the {PRINTERS[key].label} settings back (10 min)") from None
         back = tmp / "out" / "back.3mf"
         if run.returncode != 0 or not back.exists():
             log = (run.stdout + run.stderr).splitlines()
@@ -931,6 +934,10 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
         except Refusal as e:
             print(f"  SKIP {name} {PRINTERS[k].label}\n!! {e}")
             withdraw(out_path(out, name, k, prefix), "it was refused")
+            ok = False
+        except Exception as e:  # a bug or a slicer gone wrong: this printer fails, the rest still get theirs
+            print(f"  FAIL {name} {PRINTERS[k].label}\n!! {type(e).__name__}: {e}")
+            withdraw(out_path(out, name, k, prefix), "it failed")
             ok = False
         made, failed = made + ok, failed + (not ok)
     del m

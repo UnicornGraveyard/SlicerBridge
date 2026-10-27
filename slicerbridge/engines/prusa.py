@@ -1100,6 +1100,9 @@ def convert(path: Path, name: str, keys: list[str], out: Path, prefix: str = "",
         except Refusal as e:
             print(f"\n  SKIP {name} {PRINTERS[key].label}\n!! {e}")
             refused.append((f"{name} {PRINTERS[key].label}", str(e)))
+        except Exception as e:  # a bug or a slicer gone wrong: this printer fails, the rest still get theirs
+            print(f"\n  FAIL {name} {PRINTERS[key].label}\n!! {type(e).__name__}: {e}")
+            refused.append((f"{name} {PRINTERS[key].label}", f"{type(e).__name__}: {e}"))
         src = None
         gc.collect()
     print_table(rows, refused)
