@@ -86,8 +86,8 @@ or [add it](docs/adding-a-printer.md).
 
 ## Install
 
-SlicerBridge runs on **macOS** today (Linux and Windows: [help wanted](docs/install.md#linux-and-windows)), with
-Python 3.10 or newer.
+SlicerBridge runs on **macOS** and **Windows** ([what's different there](docs/install.md#linux-and-windows);
+Linux: help wanted), with Python 3.10 or newer.
 
 ```bash
 pipx install slicerbridge                                    # or: uv tool install slicerbridge
