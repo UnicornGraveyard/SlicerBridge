@@ -175,10 +175,13 @@ def cmd_verify(a: argparse.Namespace) -> int:
     for f in files:
         key = printer_of(f)
         if key:
-            info, problems, warnings = orca_check.audit(f, src, key)
-            if a.slice and not problems:
-                si, sp, sw = orca_check.slice_check(f, key)
-                info, problems, warnings = info + si, problems + sp, warnings + sw
+            try:
+                info, problems, warnings = orca_check.audit(f, src, key)
+                if a.slice and not problems:
+                    si, sp, sw = orca_check.slice_check(f, key)
+                    info, problems, warnings = info + si, problems + sp, warnings + sw
+            except Exception as e:  # one file's failure doesn't stop the others being checked
+                info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif f.name.endswith(f" - {U1_LABEL}.3mf"):
             (info, problems), warnings = u1_check.audit(f, src), []
         elif any(p.label in f.name for p in PRUSA_PRINTERS.values()):
