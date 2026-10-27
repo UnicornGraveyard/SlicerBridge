@@ -89,9 +89,15 @@ def _app(env: str, *candidates: str) -> Path:
 
 def _newest(path: Path) -> tuple:
     """Sorts "Creality Print 7.0" after "Creality Print 6.2", "6.10" after "6.9", and
-    "7.0" after "7.0 Beta": of the same version, the name with fewer words is the release."""
-    s = str(path)
-    return tuple(int(n) for n in re.findall(r"\d+", s)), -len(re.findall(r"[A-Za-z]+", s))
+    "7.0" after "7.0 Beta 2": the version is the first number in the folder that has one,
+    and of the same version, the one with nothing after it is the release."""
+    part = next((p for p in reversed(path.parts) if re.search(r"\d", p)), "")
+    found = re.search(r"(\d+(?:\.\d+)*)(.*)", part)
+    if not found:
+        return (), False, ()
+    version, rest = found.groups()
+    return (tuple(int(n) for n in version.split(".")), not re.search(r"[A-Za-z]", rest),
+            tuple(int(n) for n in re.findall(r"\d+", rest)))
 
 
 def _installs(mac: tuple, windows: tuple) -> tuple:

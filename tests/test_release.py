@@ -74,12 +74,15 @@ def test_an_empty_setting_means_the_usual_place(monkeypatch):
 def test_a_location_can_name_variables_and_the_newest_version(tmp_path, monkeypatch):
     """Windows installs go under %ProgramFiles%, and Creality Print puts its version in the folder name."""
     from slicerbridge import printers
-    for version in ("6.2", "6.10", "7.0 Beta", "7.0"):
+    for version in ("6.2", "6.10", "7.0 Beta", "7.0 Beta 2", "7.0 Beta3", "7.0"):
         (tmp_path / f"Creality Print {version}").mkdir()
         (tmp_path / f"Creality Print {version}" / "CrealityPrint.exe").touch()
     monkeypatch.setenv("SB_TEST_PROGRAMS", str(tmp_path))
     monkeypatch.delenv("SLICERBRIDGE_CREALITY_PRINT", raising=False)
     found = printers._app("SLICERBRIDGE_CREALITY_PRINT", str(Path("$SB_TEST_PROGRAMS") / "Creality Print *" / "CrealityPrint.exe"))
-    assert found.parent.name == "Creality Print 7.0"  # not 6.10, and not the 7.0 beta
+    assert found.parent.name == "Creality Print 7.0"  # not 6.10, and not a 7.0 beta, numbered or not
+    order = ["Creality Print 6.10", "Creality Print 7.0 Beta", "Creality Print 7.0 Beta 2", "Creality Print 7.0 Beta3",
+             "Creality Print 7.0", "Creality Print 7.1 Beta"]  # a newer version's beta is still newer
+    assert sorted(order, key=lambda n: printers._newest(tmp_path / n / "CrealityPrint.exe")) == order
     nowhere = str(tmp_path / "Nothing *" / "x.exe")
     assert printers._app("SLICERBRIDGE_CREALITY_PRINT", nowhere) == Path(nowhere)  # shown as where it was looked for
