@@ -73,6 +73,26 @@ PrusaSlicer runs against a private settings folder inside the cache, never your 
 
 The engines are plain Python and the U1 engine works anywhere. The rest needs a slicer's command line and its
 profiles folder. On Linux and Windows, point the environment variables above at the slicer's executable: for an
-extracted AppImage, the binary inside it, with `resources/profiles` beside or above it. This isn't tested yet.
-If you try it, please [open an issue](https://github.com/UnicornGraveyard/SlicerBridge/issues) with what
-happened.
+extracted AppImage, the binary inside it, with `resources/profiles` beside or above it.
+
+**Windows** has written and sliced files for 28 printers (Windows 11, Python 3.13), with:
+
+| Variable | Points at |
+|---|---|
+| `SLICERBRIDGE_BAMBU_STUDIO` | `C:\Program Files\Bambu Studio\bambu-studio.exe` |
+| `SLICERBRIDGE_ORCASLICER` | `orca-slicer.exe` in the extracted OrcaSlicer 2.4.2 portable zip |
+| `SLICERBRIDGE_PRUSASLICER` | `prusa-slicer-console.exe` in the extracted PrusaSlicer portable zip |
+
+What's different there:
+
+- **The Flashforge Creator 5 isn't written.** OrcaSlicer 2.4.2 for Windows crashes loading the preset it wrote
+  for it, so its settings can't be read back.
+- **The Prusa CORE One INDX needs a newer Prusa bundle** than PrusaSlicer 2.9.6 ships (2.4.14). A PrusaSlicer
+  that has never run hasn't downloaded one: start it once, or copy `PrusaResearch.ini` 2.5.0 or newer from
+  [PrusaSlicer-settings-prusa-fff](https://github.com/prusa3d/PrusaSlicer-settings-prusa-fff/tree/main/PrusaResearch)
+  into the cache's `prusaslicer/vendor/` folder.
+- Bambu Studio's command line now and then never exits while reading settings back; SlicerBridge gives it three
+  minutes and one more try.
+
+Linux isn't tested yet. If you try it, please
+[open an issue](https://github.com/UnicornGraveyard/SlicerBridge/issues) with what happened.

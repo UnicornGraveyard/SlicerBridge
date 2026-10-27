@@ -8,6 +8,18 @@
 - After each release, `python scripts/release.py plugin <version>` moves the plugin to it and relocks, so the
   plugin only ever names a version that's on PyPI.
 - The plugin has an icon: the Unicorn Graveyard logo, which isn't covered by the GPL.
+- Windows works ([docs/install.md](docs/install.md#linux-and-windows)): the CLI hands the slicers absolute
+  paths and writes UTF-8, and every text file is read as UTF-8 (a profile with an accented byte, like OrcaSlicer's
+  Kobra X, was skipped as missing).
+- One printer failing (a slicer that hangs or crashes, a bug) no longer ends the run: that printer fails and the
+  rest of its brand, and the other engines, still get their files.
+- The prime tower goes where the printer can print it: where every nozzle of an H2D or H2C reaches; sized as
+  the slicers print it (Bambu Studio's square rib-walled towers, auto brims, flush towers, walls); unturned; clear
+  of exclusion areas and of the skirt's reach. When no strip beside the model's box holds it, it goes where the
+  model's outline from above leaves room, and a crowded auto brim drops to 3 mm. A tower on the outline, not
+  just in the box, fails the check.
+- The slice check reports Bambu Studio's reason from `result.json`, and a tower conflict or an unprintable-area
+  exit slices a scaled copy, as a model bigger than the bed does, with a warning.
 
 ## 0.2.0 (2026-10-26)
 
