@@ -342,6 +342,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):  # not when the MCP server captures it
         sys.stdout.reconfigure(line_buffering=True)  # a long run shows each file as it lands
+        # Windows writes a pipe or a file in its ANSI code page, which has no ✓ or ⚠: the
+        # first warning ended the run with a UnicodeEncodeError, files still to write.
+        for stream in (sys.stdout, sys.stderr):
+            stream.reconfigure(encoding="utf-8")
     a = build_parser().parse_args(argv)
     try:
         return a.run(a)
