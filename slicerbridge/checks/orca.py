@@ -66,6 +66,10 @@ VERSION_REFUSED = 232  # CLI_FILE_VERSION_NOT_SUPPORTED (-24) as an exit status
 # CLI_GCODE_PATH_CONFLICTS (-101), as Windows and as a shell report it: the slicer's
 # own word that the tower hit the model, with or without a line in the log saying so.
 CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
+# CLI_GCODE_PATH_IN_UNPRINTABLE_AREA (-102): a brim, skirt or tower past the bed's
+# printable area, as a model too big for its bed with them would be.
+UNPRINTABLE_EXITS = {-102, 2**32 - 102, 256 - 102}
+AUTO_MODEL_BRIM = 12.0  # mm; see outline_reach()
 # The Anycubic Kobra X's ACE Pro block in its color-change G-code, and the guard
 # Anycubic Slicer Next needs nested inside it (engines/orca.py, guard_ace).
 ACE_BLOCK = "{ if magic_mask_with_box == -1392 }"
@@ -154,26 +158,33 @@ def tower_area(cfg: dict) -> float:
     into the tower and purges the rest into the printer's chute; on, the whole
     flush goes in. A quarter on top for the rows' spacing. The measured K2 Plus
     Gatefang tower, 4 colors at 0.16 mm: about 40 x 24 mm against 40 x 35 here.
+
+    A whole flush on every filament's change every layer is far past what a model's
+    busiest layer has: IronJaw's K2 Pro tower (purging, 4 colors, 0.16 mm, 270 mm^3
+    at most) printed about 45 x 60 mm against 40 x 211 that way. A flush tower counts
+    a change for every three filaments, at least one, which puts it at 40 x 70.
     """
     k = len(cfg.get("filament_colour") or []) or 1
     lh = _first(cfg.get("layer_height")) or 0.2
     if str(cfg.get("purge_in_prime_tower")) == "1":
         v = max(float(x) for x in cfg.get("flush_volumes_matrix") or ["0"]) * (_first(cfg.get("flush_multiplier")) or 1)
-    else:
-        v = _first(cfg.get("prime_volume")) or 45
+        return 1.25 * max(1.0, k / 3) * v / lh
+    v = _first(cfg.get("prime_volume")) or 45
     return 1.25 * k * v / lh
 
 
 def outline_reach(cfg: dict) -> float:
     """How far past the model its brim and skirt print, in mm.
 
-    A brim set to auto has no width until slicing; 5 mm covers what the slicers
-    pick for a model's footprint. Each skirt loop is about half a millimetre.
+    A brim set to auto has no width until slicing, and grows with the model's
+    height: OrcaSlicer gave IronJaw (127 mm tall) 9.8 to 11.7 mm on the QIDI Plus4,
+    where 5 mm had been assumed and the skirt ran off the bed. Each skirt loop is
+    about half a millimetre.
     """
     brim_type = str(cfg.get("brim_type") or "no_brim")
     brim = _first(cfg.get("brim_width")) if brim_type != "no_brim" else 0.0
     if brim_type == "auto_brim" and brim <= 0:
-        brim = 5.0
+        brim = AUTO_MODEL_BRIM
     loops = int(_first(cfg.get("skirt_loops")))
     skirt = _first(cfg.get("skirt_distance")) + 0.5 * loops if loops > 0 else 0.0
     return brim + skirt
@@ -204,6 +215,9 @@ def reachable_area(cfg: dict) -> tuple[float, float, float, float]:
 # that started 8.2 mm before its corner.
 AUTO_TOWER_BRIM = 8.0
 RIB_EXTRA = (8.0, 5.5)
+# A plain tower's walls and brim lines past its width and depth: IronJaw's Kobra 3
+# tower (45 mm, 5 mm brim) printed 58.5 x 44.2 mm against 55 x 41.2.
+WALL_EXTRA = 4.0
 
 
 def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, float]:
@@ -220,7 +234,7 @@ def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, flo
     if str(cfg.get("prime_tower_rib_wall")) == "1":
         side = math.sqrt(area)
         return side + RIB_EXTRA[0], side + RIB_EXTRA[1], b
-    return w, area / w, b
+    return w + WALL_EXTRA, area / w + WALL_EXTRA, b
 
 
 # The model's outline seen from above, as the cells of a CELL mm grid it covers.
@@ -738,6 +752,15 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
                 warnings.append(f"at full size {slicer.name}'s prime tower collides with the model: move the tower "
                                 "or scale it down in the slicer (sliced at " + ", ".join(
                                     f"{v * 100:g}%" for v in scales.values()) + " with the tower beside it)")
+        elif run.returncode in UNPRINTABLE_EXITS and not scales:
+            # At full size its brim, skirt or tower runs off the bed: the downloader's to
+            # fix, like a model bigger than the bed -- so slice it smaller, as they would.
+            run, scales = run_on(True)
+            log = (run.stdout + run.stderr).splitlines()
+            if run.returncode == 0:
+                warnings.append(f"at full size {slicer.name}'s brim, skirt or prime tower runs past the bed's "
+                                "printable area: scale it down or narrow the brim in the slicer (sliced at "
+                                + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
         if scales:
             info.append("sliced    : a copy with " + ", ".join(f"plate {n} at {v * 100:g}%" for n, v in scales.items())
                         + ", as a downloader would scale it")

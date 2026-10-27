@@ -319,9 +319,12 @@ def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
     spare_x, spare_y = bed.width - w, bed.depth - d
     mid = ((bed.x0 + bed.x1) / 2, (bed.y0 + bed.y1) / 2)
     # Room at the bed's edge for the brim and skirt (a QIDI preset's skirt ran off the
-    # bed at 5 mm), without eating the strip the tower needs on the far side.
-    share = 2 if bed.tower is None else 4
-    mx, my = min(max(5.0, bed.edge), spare_x / share), min(max(5.0, bed.edge), spare_y / share)
+    # bed at 5 mm), without eating the strip the tower needs on the far side -- where
+    # that side can hold a tower at all; where it can't, the model takes the room.
+    b = bed.tower_brim
+    share_x = 4 if bed.tower is not None and spare_x >= tw + 2 * b + TOWER_SLACK else 2
+    share_y = 4 if bed.tower is not None and spare_y >= td + 2 * b + TOWER_SLACK else 2
+    mx, my = min(max(5.0, bed.edge), spare_x / share_x), min(max(5.0, bed.edge), spare_y / share_y)
     edges = {
         "left":  ((bed.x0 + mx + w / 2, mid[1]), (bed.x0 + mx + w, bed.y0, bed.x1, bed.y1)),
         "front": ((mid[0], bed.y0 + my + d / 2), (bed.x0, bed.y0 + my + d, bed.x1, bed.y1)),
@@ -365,7 +368,10 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
             tower = (min(max(bed.tower_at[0], bed.x0), bed.x1 - tw), min(max(bed.tower_at[1], bed.y0), bed.y1 - td))
     else:
         def clash(c: tuple, t: Optional[tuple]) -> bool:
-            boxes = [(c[0] - w / 2, c[1] - d / 2, c[0] + w / 2, c[1] + d / 2)]
+            # The model with its brim and skirt: the QIDI Q2's brim reached its corner
+            # exclusion from a model 1.6 mm clear of it ("unprintable area").
+            e = bed.edge
+            boxes = [(c[0] - w / 2 - e, c[1] - d / 2 - e, c[0] + w / 2 + e, c[1] + d / 2 + e)]
             if t is not None:
                 b = bed.tower_brim + EXCLUSION_GAP
                 boxes.append((t[0] - b, t[1] - b, t[0] + tw + b, t[1] + td + b))
@@ -417,8 +423,10 @@ def tower_spot(outline: set, bed: Bed, tw: float, td: float, center: tuple) -> O
     would put it.
     """
     b, step = bed.tower_brim, verify.CELL
-    xs = [bed.x0 + b + TOWER_EDGE + k * step for k in range(int((bed.width - tw - 2 * (b + TOWER_EDGE)) // step) + 1)]
-    ys = [bed.y0 + b + TOWER_EDGE + k * step for k in range(int((bed.depth - td - 2 * (b + TOWER_EDGE)) // step) + 1)]
+    # The skirt goes around the tower too (the QIDI Q2's ran off the bed from 2 mm).
+    e = b + max(TOWER_EDGE, bed.edge)
+    xs = [bed.x0 + e + k * step for k in range(int((bed.width - tw - 2 * e) // step) + 1)]
+    ys = [bed.y0 + e + k * step for k in range(int((bed.depth - td - 2 * e) // step) + 1)]
     # A summed-area table of the outline over the bed and a margin around it, so
     # each spot's check is four lookups.
     pad = int(max(TOWER_CLEARANCES) // step) + 2

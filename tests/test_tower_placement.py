@@ -23,7 +23,7 @@ def test_an_auto_brim_is_a_brim_and_rib_walls_build_square():
     w, d, b = check.tower_size(cfg)
     assert b == check.AUTO_TOWER_BRIM
     assert abs((w - check.RIB_EXTRA[0]) - (d - check.RIB_EXTRA[1])) < 1e-9  # square but for the ribs
-    assert check.tower_size({**cfg, "prime_tower_rib_wall": "0"})[0] == 60
+    assert check.tower_size({**cfg, "prime_tower_rib_wall": "0"})[0] == 60 + check.WALL_EXTRA
 
 
 def test_a_big_triangle_marks_its_whole_outline():
