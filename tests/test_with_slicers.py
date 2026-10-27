@@ -34,7 +34,7 @@ def test_orca_family_converts_and_slices(project, tmp_path, key):
     assert orca.convert(project, "Cube", [key], tmp_path / "out", slice_it=True) == (1, 0)
 
 
-# One AMS printer, and one with two nozzles that each reach only part of the bed.
+# One AMS printer, and one with two nozzles, one of which reaches only part of the bed.
 @pytest.mark.parametrize("key", ["a1", "x2d"])
 def test_bambu_converts_and_slices(project, tmp_path, key):
     need("bambu")

@@ -227,7 +227,8 @@ PRINTERS = {
                         _generic("Generic ", " @BBL H2DP"), 16, "bambu"),
     "h2c":      Printer("Bambu Lab H2C", "BBL", "Bambu Lab H2C 0.4 nozzle", "0.16mm Standard @BBL H2C",
                         _generic("Generic ", " @BBL H2C 0.4 nozzle"), 16, "bambu"),
-    # Two nozzles, like the H2D: the right one is fed by Bowden, for supports, and both print from the AMS.
+    # Two nozzles, like the H2D: the left one direct drive, the right one Bowden (meant for supports),
+    # which doesn't reach the bed's left 20.5 mm.
     "x2d":      Printer("Bambu Lab X2D", "BBL", "Bambu Lab X2D 0.4 nozzle", "0.16mm Standard @BBL X2D",
                         _generic("Generic ", " @BBL X2D 0.4 nozzle"), 16, "bambu"),
 
