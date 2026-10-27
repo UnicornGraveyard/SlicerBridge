@@ -97,7 +97,8 @@ def inspect_model(model_path: Annotated[str, Field(description="Path to the .3mf
 
 @mcp.tool(description="Write a ready file per printer for a multicolor .3mf project (from Bambu Studio, OrcaSlicer, "
                       "a maker's fork, or a file SlicerBridge wrote), each one checked before "
-                      "it is kept. Files go in <out_dir>/<name>/, named '<prefix><name> - <printer>.3mf'. A "
+                      "it is kept. Files go in <out_dir>/<name>/, named '<prefix><name> - <printer>.3mf', or "
+                      "'<prefix><name> - <printer> - <suffix>.3mf' with a suffix. A "
                       "printer the model can't go to (more colors than it holds, an unknown filament type) is "
                       "refused with the reason; nothing wrong is written.", annotations=WRITES)
 def convert_model(model_path: Annotated[str, Field(description="Path to the .3mf project.")],
@@ -105,6 +106,8 @@ def convert_model(model_path: Annotated[str, Field(description="Path to the .3mf
                   name: Annotated[str, Field(description="The model's name in file names; default: the file's name, less any printer in it.")] = "",
                   out_dir: Annotated[str, Field(description="Output folder; default: an 'out' folder beside the model.")] = "",
                   prefix: Annotated[str, Field(description="Text before every file name, e.g. 'My Shop - '.")] = "",
+                  suffix: Annotated[str, Field(description="Text after the printer in every file name, e.g. "
+                                                           "'My Shop' for 'Dragon - Prusa XL - My Shop.3mf'.")] = "",
                   slice_first: Annotated[bool, Field(description="Slice each file in its slicer before keeping it "
                                                                  "(a minute or two per printer).")] = False) -> str:
     src = Path(_path(model_path))
@@ -114,6 +117,8 @@ def convert_model(model_path: Annotated[str, Field(description="Path to the .3mf
         argv += ["--name", name]
     if prefix:
         argv += ["--prefix", prefix]
+    if suffix:
+        argv += ["--suffix", suffix]
     if slice_first:
         argv.append("--slice")
     return _run(*argv)

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `convert --suffix "My Shop"` (and the MCP tool's `suffix`) names files `<name> - <printer> - My Shop.3mf`:
+  model, printer, maker. `verify`, `brand-check` and converting a file again read the printer from either
+  form, and a file's default name is what comes before its printer.
+
 ## 0.3.0 (2026-10-27)
 
 - The Claude plugin ships a `uv.lock` beside its `uvx slicerbridge==<version>` launcher: SlicerBridge and every

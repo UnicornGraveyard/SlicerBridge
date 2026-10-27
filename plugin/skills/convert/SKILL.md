@@ -20,7 +20,8 @@ is never written. Its tools are on the `slicerbridge` MCP server.
    uses, and any printer it won't fit at full size.
 3. **Convert** with `convert_model`, for the printers the user wants (`list_printers` gives the keys, sets
    and vendors; `popular` is a good default). Ask for the model's name if the file name isn't what they'd
-   want on downloads, and a `prefix` if they sell under a shop name. Files go to `out/<name>/` beside the
+   want on downloads, and a `prefix` or `suffix` if they sell under a shop name (a `suffix` goes after the
+   printer: `Dragon - Creality K2 Plus - My Shop.3mf`). Files go to `out/<name>/` beside the
    model unless they give `out_dir`.
 4. **Report what came back**, printer by printer: what was written, what was refused and why, and every
    warning. Don't summarize a refusal away.
