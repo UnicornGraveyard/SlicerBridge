@@ -63,6 +63,9 @@ EPS = 1e-4
 SLICE_LIMIT = 1200  # seconds; a 2-plate, 4-color model slices in 1-2 minutes per printer
 CRASHES = {-6, -11, 134, 139}  # SIGABRT and SIGSEGV, as subprocess or as the shell reports them
 VERSION_REFUSED = 232  # CLI_FILE_VERSION_NOT_SUPPORTED (-24) as an exit status
+# CLI_GCODE_PATH_CONFLICTS (-101), as Windows and as a shell report it: the slicer's
+# own word that the tower hit the model, with or without a line in the log saying so.
+CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
 # The Anycubic Kobra X's ACE Pro block in its color-change G-code, and the guard
 # Anycubic Slicer Next needs nested inside it (engines/orca.py, guard_ace).
 ACE_BLOCK = "{ if magic_mask_with_box == -1392 }"
@@ -632,8 +635,19 @@ def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict
         s = min(s, 1.0) * 0.97  # a margin inside the bed edge
         if tower:
             room = 2 * (brim + 2)
-            beside = (bw - 2 * (tw + room)) / sx  # tower in the strip left or right
-            behind = (bd - 2 * (td + room)) / sy  # or in front
+            # The width that lets the model stay biggest: a narrow tower that purges
+            # into itself runs deeper than the bed (the K2 SE's 35 mm one).
+            own = _first(cfg.get("prime_tower_width")) or 35
+            best = None
+            for w in [own] + [own * k for k in (1.5, 2.0, 3.0, 4.0) if own * k <= bw / 2]:
+                tw, td, _b = tower_size(cfg, w)
+                beside = (bw - 2 * (tw + room)) / sx  # tower in the strip left or right
+                behind = (bd - 2 * (td + room)) / sy  # or in front
+                if best is None or max(beside, behind) > best[0]:
+                    best = (max(beside, behind), w, tw, td, beside, behind)
+            _fit, w, tw, td, beside, behind = best
+            if w != own:
+                settings["prime_tower_width"] = f"{w:g}"
             s = min(s, max(beside, behind))
             gap_x, gap_y = (bw - sx * s) / 2, (bd - sy * s) / 2
             if beside >= behind:
@@ -713,7 +727,8 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
             warnings.append(f"{slicer.name} crashed (exit {run.returncode}) and was run again")
             run, scales = run_on(False)
         log = (run.stdout + run.stderr).splitlines()
-        if run.returncode != 0 and any("conflicts found between WipeTower" in ln for ln in log):
+        if run.returncode in CONFLICT_EXITS or (run.returncode != 0 and
+                                                any("conflicts found between WipeTower" in ln for ln in log)):
             # The tower collides with the model at full size: there's no room left
             # for it. Like a model bigger than the bed, that's the downloader's to
             # arrange -- so slice it as they would, smaller with the tower beside it.
