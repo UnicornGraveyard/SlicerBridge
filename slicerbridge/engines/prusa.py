@@ -543,15 +543,55 @@ def plan_placement(src: Source, plate: Plate, bed: tuple) -> Placement:
 TOWER_DEPTH_GUESS = 40.0  # mm; PrusaSlicer sizes the tower from the purges, so only slicing knows
 
 
-def layout(pl: Placement, bed: tuple, tower_width: Optional[float]) -> tuple:
+TOWER_BRIM = 2.0  # PrusaSlicer's wipe_tower_brim_width default
+
+
+_OUTLINES: dict = {}
+
+
+def outlines(path: Path) -> dict:
+    """{plate number: the source's outline cells from above}, read once per source."""
+    if path not in _OUTLINES:
+        from . import orca as orca_engine
+        _used, plates = orca_engine.analyze(path.stem, path)
+        _OUTLINES.clear()  # one source at a time: they're big
+        _OUTLINES[path] = {p.number: p.cells for p in plates}
+    return _OUTLINES[path]
+
+
+def layout(pl: Placement, bed: tuple, tower_width: Optional[float], plate: Optional[Plate] = None,
+           outline: Optional[set] = None) -> tuple:
     """Where the model's center goes, and the wipe tower's front-left corner (or None).
 
     Without a wipe tower the model is centered. With one, PrusaSlicer would put the
     tower at its default spot -- inside a big model, where PrusaSlicer 2.9.6 logs a
     path conflict and crashes writing the G-code. So the model moves to one edge and
-    the tower goes in the middle of the strip that's left. Slicing (check 10) is what
-    proves it clears: the tower's depth and its stabilizing cone grow with the print.
+    the tower goes in the middle of the strip that's left -- or, when that strip is
+    too small for it, where the model's `outline` (the plate's cells from above)
+    leaves room. Slicing (check 10) is what proves it clears: the tower's depth and
+    its stabilizing cone grow with the print.
     """
+    center, tower = _strip_layout(pl, bed, tower_width)
+    if tower is None or plate is None or not outline:
+        return center, tower
+    bx0, by0, bx1, by1 = bed[:4]
+    w, d = pl.size[:2]
+    model = (center[0] - w / 2, center[1] - d / 2, center[0] + w / 2, center[1] + d / 2)
+    body = (tower[0] - TOWER_BRIM, tower[1] - TOWER_BRIM,
+            tower[0] + tower_width + TOWER_BRIM, tower[1] + TOWER_DEPTH_GUESS + TOWER_BRIM)
+    if not (body[0] < model[2] and model[0] < body[2] and body[1] < model[3] and model[1] < body[3]):
+        return center, tower  # the strip holds it
+    from . import orca as orca_engine
+    from ..checks import orca as check
+    move = placement_move(plate, pl, center)
+    cells = check.map_cells(outline, lambda x, y: move.apply_point(x, y, 0.0)[:2])
+    spot = orca_engine.tower_spot(cells, orca_engine.Bed(bx0, by0, bx1, by1, bed[4], tower_width, TOWER_BRIM),
+                                  tower_width, TOWER_DEPTH_GUESS, center)
+    return center, spot or tower
+
+
+def _strip_layout(pl: Placement, bed: tuple, tower_width: Optional[float]) -> tuple:
+    """The model at one edge and the tower in the middle of the strip left, as layout() starts."""
     bx0, by0, bx1, by1 = bed[:4]
     w, d = pl.size[:2]
     mid = ((bx0 + bx1) / 2, (by0 + by1) / 2)
@@ -575,10 +615,8 @@ def layout(pl: Placement, bed: tuple, tower_width: Optional[float]) -> tuple:
     return center, (tx, ty)
 
 
-def apply_placement(plate: Plate, pl: Placement, bed: tuple, center: tuple) -> None:
-    """Rewrite the plate's build transforms: turn if planned, then move to `center` on the bed.
-
-    Only ever a rotation about Z and a move -- never a scale (check 11)."""
+def placement_move(plate: Plate, pl: Placement, center: tuple) -> Transform:
+    """The turn (if planned) and move that put the plate's center at `center` on the bed."""
     pre = ROT90 if pl.rotated else Transform.identity()
     corners = [pre.apply_point(x, y, z) for x in (plate.lo[0], plate.hi[0])
                for y in (plate.lo[1], plate.hi[1]) for z in (plate.lo[2], plate.hi[2])]
@@ -587,7 +625,14 @@ def apply_placement(plate: Plate, pl: Placement, bed: tuple, center: tuple) -> N
     dx = center[0] - (lo[0] + hi[0]) / 2
     dy = center[1] - (lo[1] + hi[1]) / 2
     dz = plate.lo[2] - lo[2]  # the bottom stays where Bambu had it: on the bed
-    move = pre.compose(Transform((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, dx, dy, dz)))
+    return pre.compose(Transform((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, dx, dy, dz)))
+
+
+def apply_placement(plate: Plate, pl: Placement, bed: tuple, center: tuple) -> None:
+    """Rewrite the plate's build transforms: turn if planned, then move to `center` on the bed.
+
+    Only ever a rotation about Z and a move -- never a scale (check 11)."""
+    move = placement_move(plate, pl, center)
     for bi in plate.items:
         bi.transform = Transform.parse(bi.transform).compose(move).to_string()
 
@@ -963,7 +1008,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         final = OUT / name
         # Not dot-named (macOS would flag it hidden), and still ending in .3mf: PrusaSlicer goes by extension.
         tmp = OUT / f"partial - {name}"
-        center, tower = layout(pl, bed, prof.tower_width)
+        center, tower = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1))
         apply_placement(plate, pl, bed, center)
         try:
             stats = write_prusa_3mf(src.project, str(tmp),
