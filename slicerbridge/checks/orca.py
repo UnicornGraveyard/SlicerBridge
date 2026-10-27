@@ -430,7 +430,7 @@ def gcode_facts(path: Path) -> dict:
     tools, manual = Counter(), Counter()
     tower = [math.inf, math.inf, -math.inf, -math.inf]
     in_tower, relative, x, y, e = False, False, 0.0, 0.0, 0.0
-    with open(path, errors="replace") as g:
+    with open(path, encoding="utf-8", errors="replace") as g:
         for line in g:
             if line.startswith(";TYPE:") or line.startswith("; FEATURE:"):  # OrcaSlicer, Bambu Studio
                 in_tower = line.split(":", 1)[1].strip().lower() in ("prime tower", "wipe tower")

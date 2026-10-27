@@ -78,7 +78,7 @@ P_PATH = ns.q(ns.PRODUCTION, "path")
 def load_u1_profiles() -> list[dict]:
     profiles = []
     # bl2u1's filament_types.3mf, reduced to the two lists read here (data/u1/filament_types.json).
-    s = json.loads((DATA / "filament_types.json").read_text())
+    s = json.loads((DATA / "filament_types.json").read_text(encoding="utf-8"))
     for t, sid in zip(s.get("filament_type", []), s.get("filament_settings_id", [])):
         profiles.append({"type": t, "settings_id": sid})
     return profiles
