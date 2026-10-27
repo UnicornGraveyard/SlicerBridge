@@ -38,7 +38,6 @@ import posixpath
 import re
 import shutil
 import stat
-import subprocess
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
@@ -53,7 +52,7 @@ from .._vendor.panda2prusa.transform import Transform
 from .. import templates as templates_build
 from ..checks import orca as verify
 from ..errors import Refusal
-from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path
+from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
 
 PAINT = re.compile(rb'( paint_color=")([0-9A-Fa-f]+)(")')
 # Filament numbers in model_settings.config: part/object extruders, and settings
@@ -634,8 +633,7 @@ def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
                 zout.writestr(item, data)
         (tmp / "out").mkdir()
         slicer = SLICERS[PRINTERS[key].slicer]
-        run = subprocess.run([str(slicer.binary), "--outputdir", str(tmp / "out"), "--export-3mf", "back.3mf", str(probe)],
-                             capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=600)
+        run = run_slicer([slicer.binary, "--outputdir", tmp / "out", "--export-3mf", "back.3mf", probe], timeout=600)
         back = tmp / "out" / "back.3mf"
         if run.returncode != 0 or not back.exists():
             log = (run.stdout + run.stderr).splitlines()

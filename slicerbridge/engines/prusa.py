@@ -50,7 +50,7 @@ from .._vendor.panda2prusa.transform import Transform
 from .._vendor.panda2prusa.writer import write_prusa_3mf
 
 from ..errors import Refusal
-from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name
+from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name, run_slicer
 
 PROFILES = cache_dir() / "prusa-profiles"
 # PrusaSlicer runs against this private settings folder, never your own, so
@@ -428,7 +428,7 @@ def ensure_datadir() -> Path:
         else:
             raise Refusal("no PrusaResearch.ini vendor bundle found (install PrusaSlicer)")
     models = "\n".join(f"model:{p.model} = {p.variant}" for p in PRINTERS.values())
-    (DATADIR / "PrusaSlicer.ini").write_text(f"[vendor:PrusaResearch]\n{models}\n")
+    (DATADIR / "PrusaSlicer.ini").write_text(f"[vendor:PrusaResearch]\n{models}\n", encoding="utf-8")
     return DATADIR
 
 
@@ -439,16 +439,16 @@ def refresh_profile(key: str) -> Path:
     p = PRINTERS[key]
     PROFILES.mkdir(parents=True, exist_ok=True)
     dest = PROFILES / f"{key}.ini"
-    r = subprocess.run(
-        [ps, "--datadir", str(ensure_datadir()), "--printer-profile", p.preset,
+    r = run_slicer(
+        [ps, "--datadir", ensure_datadir(), "--printer-profile", p.preset,
          "--print-profile", p.print_preset, "--material-profile", p.filament_preset,
-         "--save", str(dest)],
-        capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=300,
+         "--save", dest],
+        timeout=300,
     )
     if r.returncode or not dest.exists():
         raise Refusal(f"PrusaSlicer could not build the {key} profile:\n{r.stdout}{r.stderr}")
     bundle = DATADIR / "vendor" / "PrusaResearch.ini"
-    ver = re.search(r"^config_version = (\S+)", bundle.read_text(errors="replace"), re.M)
+    ver = re.search(r"^config_version = (\S+)", bundle.read_text(encoding="utf-8", errors="replace"), re.M)
     print(f"  profile {key:6} <- {p.preset} / {p.print_preset} / {p.filament_preset}"
           f"  (Prusa bundle {ver.group(1) if ver else '?'})")
     return dest
@@ -458,7 +458,7 @@ def load_profile(key: str) -> Profile:
     path = PROFILES / f"{key}.ini"
     if not path.exists():
         refresh_profile(key)
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     header = lines[0].lstrip("#").strip()
     items = []
     for line in lines[1:]:
@@ -853,18 +853,17 @@ def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer
 
 
 def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: Source, tools: int) -> Check:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         saved = Path(tmp) / "loaded.ini"
         try:
-            r = subprocess.run([ps, "--datadir", str(ensure_datadir()), "--info", str(out),
-                                "--save", str(saved)], capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=600)
+            r = run_slicer([ps, "--datadir", ensure_datadir(), "--info", out, "--save", saved], timeout=600)
         except subprocess.TimeoutExpired:
             return Check("9", "PrusaSlicer --info", False, "timed out after 600 s")
         facets = sum(int(m) for m in re.findall(r"^number_of_facets = (\d+)", r.stdout, re.M))
         manifold = re.findall(r"^manifold = (\w+)", r.stdout, re.M)
         loaded = {}
         if saved.exists():
-            for line in saved.read_text().splitlines():
+            for line in saved.read_text(encoding="utf-8").splitlines():
                 k, sep, v = line.partition(" = ")
                 if sep:
                     loaded[k] = v
@@ -886,11 +885,10 @@ def slice_check(out: Path, ps: str) -> Check:
     and its cone grows with the print's height, and PrusaSlicer 2.9.6 logs 'gcode
     path conflicts' and then crashes writing the G-code when it hits the model.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         try:
-            r = subprocess.run([ps, "--datadir", str(ensure_datadir()), "--dont-arrange",
-                                "--export-gcode", "--output", str(Path(tmp) / "check.bgcode"), str(out)],
-                               capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=1800)
+            r = run_slicer([ps, "--datadir", ensure_datadir(), "--dont-arrange",
+                            "--export-gcode", "--output", Path(tmp) / "check.bgcode", out], timeout=1800)
         except subprocess.TimeoutExpired:
             return Check("10", "PrusaSlicer slices it", False, "timed out after 30 min")
         wrote = (Path(tmp) / "check.bgcode").exists() and "Slicing result exported" in r.stdout

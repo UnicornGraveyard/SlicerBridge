@@ -55,13 +55,15 @@ from collections import Counter
 from pathlib import Path
 
 from .. import templates as templates_build
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, Slicer
+from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, Slicer, run_slicer
 from . import u1
 
 
 EPS = 1e-4
 SLICE_LIMIT = 1200  # seconds; a 2-plate, 4-color model slices in 1-2 minutes per printer
-CRASHES = {-6, -11, 134, 139}  # SIGABRT and SIGSEGV, as subprocess or as the shell reports them
+# SIGABRT and SIGSEGV, as subprocess or as the shell reports them, and on Windows an
+# access violation, a heap corruption and a failed stack check (0xC0000005, 0xC0000374, 0xC0000409).
+CRASHES = {-6, -11, 134, 139, 0xC0000005, 0xC0000374, 0xC0000409}
 VERSION_REFUSED = 232  # CLI_FILE_VERSION_NOT_SUPPORTED (-24) as an exit status
 # The Anycubic Kobra X's ACE Pro block in its color-change G-code, and the guard
 # Anycubic Slicer Next needs nested inside it (engines/orca.py, guard_ace).
@@ -430,7 +432,7 @@ def gcode_facts(path: Path) -> dict:
     tools, manual = Counter(), Counter()
     tower = [math.inf, math.inf, -math.inf, -math.inf]
     in_tower, relative, x, y, e = False, False, 0.0, 0.0, 0.0
-    with open(path, errors="replace") as g:
+    with open(path, encoding="utf-8", errors="replace") as g:
         for line in g:
             if line.startswith(";TYPE:") or line.startswith("; FEATURE:"):  # OrcaSlicer, Bambu Studio
                 in_tower = line.split(":", 1)[1].strip().lower() in ("prime tower", "wipe tower")
@@ -551,7 +553,7 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
     # refuses them as newer than itself (2.4.2): its own exports need the override.
     # Any other slicer gets the file as a downloader would, and a refusal is noted.
     newer = slicer == SLICERS["orca"]
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def run_on(crowded: bool) -> tuple[subprocess.CompletedProcess, dict]:
             target = Path(tmp) / "scaled.3mf"
             scales = scaled_to_fit(f, target, cfg, crowded)
@@ -560,7 +562,7 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
             cmd = [str(slicer.binary), *slicer.cli, *(["--allow-newer-file"] if newer else []),
                    "--outputdir", tmp, "--slice", "0", str(target if scales else f)]
             try:
-                run = subprocess.run(cmd, capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=SLICE_LIMIT)
+                run = run_slicer(cmd, timeout=SLICE_LIMIT)
             except subprocess.TimeoutExpired:
                 run = subprocess.CompletedProcess(cmd, -9, "", f"still slicing after {SLICE_LIMIT // 60} min: "
                                                              f"the slicer hung")

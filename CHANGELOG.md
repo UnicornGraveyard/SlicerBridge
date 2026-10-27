@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Windows: the slicers are found in their installers' usual folders, and each one's version is read from its
+  `.exe`. Converting and slicing for Bambu Lab printers is tried end to end with Bambu Studio 2.8.2. CI runs the
+  tests and the plugin on Windows too.
+- Fixed on Windows: output with ⚠ or ✓ crashed when piped or redirected, and slicer profiles and logs were read
+  in the system's code page instead of UTF-8. A slicer crash is now recognized and retried there, as on macOS.
+- A model name or prefix with `< > : " / \ | ? *` is written with `-` in their place, so its files open on
+  Windows wherever they were made.
+
 - The Claude plugin ships a `uv.lock` beside its `uvx slicerbridge==<version>` launcher: SlicerBridge and every
   package it needs at exact PyPI versions with their hashes, which Anthropic's directory checks for its Verified
   badge.

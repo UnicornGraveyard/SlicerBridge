@@ -22,6 +22,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mcp]"
 .venv/bin/ruff check .
 ```
 
+On Windows the same, with `py -m venv .venv` and `.venv\Scripts\` in place of `.venv/bin/`.
+
 The end-to-end tests need real slicers and build templates (minutes the first time):
 
 ```bash
@@ -36,8 +38,9 @@ Run them before a pull request that changes an engine, a check or the printer ta
 - **A brand slicer finding.** If a file won't open or slice in a maker's own slicer, run
   `slicerbridge brand-check` on it and open a "Slicer compatibility" issue with the output, the slicer's
   version, and where in its source the behavior comes from if you can find it.
-- **Linux and Windows.** The slicer paths and profile folders are the missing pieces
-  ([docs/install.md](docs/install.md#linux-and-windows)).
+- **Linux.** The slicer paths and profile folders are the missing pieces ([docs/install.md](docs/install.md#linux)).
+- **Windows.** Trying OrcaSlicer, PrusaSlicer and the brand slicers there, and saying where they installed
+  ([docs/install.md](docs/install.md#windows)).
 - **Other filament types** than PLA, PETG and ABS (Prusa printers take PLA only so far).
 
 ## Pull requests

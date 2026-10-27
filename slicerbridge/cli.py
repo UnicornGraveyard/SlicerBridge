@@ -28,7 +28,7 @@ from pathlib import Path
 from . import __version__
 from .errors import Refusal
 from .printers import (ALL, BRAND_SLICERS, PRINTERS, PRUSA_PRINTERS, SETS, SLICERS, U1_LABEL, cache_dir,
-                       engine_of, label_of, printer_of, select, tools_of, vendor_of)
+                       engine_of, file_safe, label_of, printer_of, select, tools_of, vendor_of)
 
 def _engine(name: str):
     """Import an engine only when it's used: they pull in Panda2Prusa and lxml."""
@@ -113,7 +113,13 @@ def _default_name(src: Path) -> str:
 
 def cmd_convert(a: argparse.Namespace) -> int:
     src = _model(a.model)
-    name = a.name or _default_name(src)
+    given = a.name or _default_name(src)
+    # Windows can't open a file named with < > : " / \ | ? *, or ending in a dot or space.
+    name, prefix = file_safe(given).rstrip(". "), file_safe(a.prefix)
+    if not name:
+        raise SystemExit(f'!! "{given}" leaves nothing to name the files with: give --name a word')
+    if (name, prefix) != (given, a.prefix):
+        print(f'"{a.prefix}{given}" isn\'t a file name Windows can open: naming the files "{prefix}{name} - <printer>.3mf"')
     keys = select(a.printers)
     explicit = _parse_map(a.map)
     if explicit and set(_by_engine(keys)) != {"prusa"}:
@@ -122,7 +128,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
     for engine, ks in _by_engine(keys).items():
         mod = _engine(engine)
         kwargs = {"explicit": explicit} if engine == "prusa" else {}
-        m, f = mod.convert(src, name, ks, Path(a.out), a.prefix, a.slice, **kwargs)
+        m, f = mod.convert(src, name, ks, Path(a.out), prefix, a.slice, **kwargs)
         made, failed = made + m, failed + f
     print(f"\n{made} file(s) written to {Path(a.out) / name}, {failed} refused or failed.")
     return 1 if failed else 0
@@ -337,6 +343,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):  # not when the MCP server captures it
         sys.stdout.reconfigure(line_buffering=True)  # a long run shows each file as it lands
+        if sys.platform == "win32":  # piped or redirected, Windows writes its code page, which has no ⚠ or ✓
+            for stream in (sys.stdout, sys.stderr):
+                stream.reconfigure(encoding="utf-8", errors="replace")
     a = build_parser().parse_args(argv)
     try:
         return a.run(a)
