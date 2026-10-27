@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-27)
 
 - The Claude plugin ships a `uv.lock` beside its `uvx slicerbridge==<version>` launcher: SlicerBridge and every
   package it needs at exact PyPI versions with their hashes, which Anthropic's directory checks for its Verified

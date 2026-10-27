@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/UnicornGraveyard/SlicerBridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "slicerbridge",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
