@@ -85,13 +85,33 @@ PrusaSlicer runs against a private settings folder inside the cache, never your 
 ## Windows
 
 SlicerBridge finds the slicers in their installers' usual folders (the tables above) and reads each one's
-version from its `.exe`. CI runs the test suite on Windows as well as macOS and Linux, and converting and slicing for Bambu Lab printers has
-been tried end to end with Bambu Studio 2.8.2. OrcaSlicer, PrusaSlicer and the brand slicers haven't been tried
-on Windows yet: if one misbehaves, please [open an issue](https://github.com/UnicornGraveyard/SlicerBridge/issues)
-with `slicerbridge doctor`'s output.
+version from its `.exe`. A portable zip goes wherever you extract it, so point its variable at the `.exe`. CI
+runs the test suite on Windows as well as macOS and Linux.
 
-File names: Windows can't hold `< > : " / \ | ? *` in one, so SlicerBridge writes those as `-` in every name it
-makes, on every platform, since files made on a Mac are opened on Windows too.
+It has written and sliced files for 28 printers on Windows 11 with Python 3.13, using:
+
+| Slicer | Where |
+|---|---|
+| Bambu Studio 2.8.2 | `C:\Program Files\Bambu Studio\bambu-studio.exe`, found by itself |
+| OrcaSlicer 2.4.2 | `orca-slicer.exe` in the extracted portable zip, via `SLICERBRIDGE_ORCASLICER` |
+| PrusaSlicer | `prusa-slicer-console.exe` in the extracted portable zip, via `SLICERBRIDGE_PRUSASLICER` |
+
+What's different there:
+
+- **The Flashforge Creator 5 isn't written.** OrcaSlicer 2.4.2 for Windows crashes loading the preset it wrote
+  for it, so its settings can't be read back.
+- **The Prusa CORE One INDX needs a newer Prusa bundle** than PrusaSlicer 2.9.6 ships (2.4.14). A PrusaSlicer
+  that has never run hasn't downloaded one: start it once, or copy `PrusaResearch.ini` 2.5.0 or newer from
+  [PrusaSlicer-settings-prusa-fff](https://github.com/prusa3d/PrusaSlicer-settings-prusa-fff/tree/main/PrusaResearch)
+  into the cache's `prusaslicer/vendor/` folder.
+- Bambu Studio's command line now and then never exits while reading settings back; SlicerBridge gives it three
+  minutes and one more try.
+- **File names:** Windows can't hold `< > : " / \ | ? *` in one, so SlicerBridge writes those as `-` in every
+  name it makes, on every platform, since files made on a Mac are opened on Windows too.
+
+The brand slicers' Windows folders come from their installers and haven't been tried on a real install. If one
+misbehaves, please [open an issue](https://github.com/UnicornGraveyard/SlicerBridge/issues) with
+`slicerbridge doctor`'s output.
 
 ## Linux
 

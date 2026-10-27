@@ -38,9 +38,10 @@ import posixpath
 import re
 import shutil
 import stat
+import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
@@ -113,6 +114,8 @@ CORE_OBJECT = ns.q(ns.CORE, "object")
 CORE_MESH = ns.q(ns.CORE, "mesh")
 CORE_VERTICES = ns.q(ns.CORE, "vertices")
 CORE_VERTEX = ns.q(ns.CORE, "vertex")
+CORE_TRIANGLES = ns.q(ns.CORE, "triangles")
+CORE_TRIANGLE = ns.q(ns.CORE, "triangle")
 CORE_COMPONENTS = ns.q(ns.CORE, "components")
 CORE_COMPONENT = ns.q(ns.CORE, "component")
 P_PATH = ns.q(ns.PRODUCTION, "path")
@@ -130,16 +133,18 @@ class Bed:
     tower_at: tuple = (0.0, 0.0)  # the profile's own prime tower spot
     exclusions: tuple = ()        # (x0, y0, x1, y1) rectangles nothing may touch
     edge: float = 5.0             # mm kept between the model and the bed's edge: its brim and skirt
+    plate: tuple = ()             # (width, depth) of the whole printable area, where it's more than every nozzle reaches
 
     @classmethod
     def of(cls, settings: dict) -> "Bed":
         pts = [tuple(float(c) for c in p.split("x")) for p in settings["printable_area"]]
-        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        plate = (max(p[0] for p in pts) - min(p[0] for p in pts), max(p[1] for p in pts) - min(p[1] for p in pts))
+        x0, y0, x1, y1 = verify.reachable_area(settings)
         tower = float(settings.get("prime_tower_width") or 35) if settings.get("enable_prime_tower") == "1" else None
         at = (float((settings.get("wipe_tower_x") or ["0"])[0]), float((settings.get("wipe_tower_y") or ["0"])[0]))
-        return cls(min(xs), min(ys), max(xs), max(ys), float(settings["printable_height"]), tower,
-                   float(settings.get("prime_tower_brim_width") or 0), at,
-                   tuple(verify.exclusion_rects(settings)), verify.outline_reach(settings) + 2)
+        return cls(x0, y0, x1, y1, float(settings["printable_height"]), tower,
+                   verify.tower_size(settings)[2], at,
+                   tuple(verify.exclusion_rects(settings)), verify.outline_reach(settings) + 2, plate)
 
     @property
     def width(self) -> float:
@@ -155,7 +160,8 @@ def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
     v = math.sqrt(count)
     cols = round(v) + 1 if v > round(v) else round(v)
     row, col = divmod(index, cols)
-    return col * bed.width * PLATE_STRIDE, -row * bed.depth * PLATE_STRIDE
+    width, depth = bed.plate or (bed.width, bed.depth)
+    return col * width * PLATE_STRIDE, -row * depth * PLATE_STRIDE
 
 
 def parse_filaments(path: Path) -> list[dict]:
@@ -179,6 +185,7 @@ class Plate:
     items: list = field(default_factory=list)     # (object id, 3MF transform string)
     lo: list = field(default_factory=lambda: [math.inf] * 3)
     hi: list = field(default_factory=lambda: [-math.inf] * 3)
+    cells: set = field(default_factory=set)       # its outline from above, verify.CELL mm cells
 
     @property
     def size(self) -> tuple:
@@ -239,17 +246,26 @@ def analyze(slug: str, src: Path) -> tuple[list[int], list[Plate]]:
                 continue
             m = xf.m
             lo, hi = plate.lo, plate.hi
-            verts = objs[key].find(CORE_MESH).find(CORE_VERTICES)
+            mesh = objs[key].find(CORE_MESH)
+            verts = mesh.find(CORE_VERTICES)
+            xs, ys = [], []
             for v in (verts.iterchildren(CORE_VERTEX) if verts is not None else ()):
                 x, y, z = float(v.get("x")), float(v.get("y")), float(v.get("z"))
                 p = (x * m[0] + y * m[3] + z * m[6] + m[9],
                      x * m[1] + y * m[4] + z * m[7] + m[10],
                      x * m[2] + y * m[5] + z * m[8] + m[11])
+                xs.append(p[0])
+                ys.append(p[1])
                 for k in range(3):
                     if p[k] < lo[k]:
                         lo[k] = p[k]
                     if p[k] > hi[k]:
                         hi[k] = p[k]
+            tris = mesh.find(CORE_TRIANGLES)
+            if tris is not None:
+                verify.add_outline(plate.cells, xs, ys,
+                                   ((int(t.get("v1")), int(t.get("v2")), int(t.get("v3")))
+                                    for t in tris.iterchildren(CORE_TRIANGLE)))
     del project, objs
     gc.collect()
     return used, [plates[n] for n in numbers]
@@ -286,6 +302,12 @@ def orientation(size: tuple, bed: Bed) -> Optional[bool]:
     return None
 
 
+# A strip must hold the estimated tower with this much to spare, or the tower goes
+# where the outline leaves room: the estimate runs short (IronJaw's P2S tower printed
+# 8 mm deeper than its A1 one, from the same estimate).
+TOWER_SLACK = 12.0
+
+
 def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
     """Candidate (model center, tower position or None, crowded) on the bed, best first.
 
@@ -297,9 +319,12 @@ def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
     spare_x, spare_y = bed.width - w, bed.depth - d
     mid = ((bed.x0 + bed.x1) / 2, (bed.y0 + bed.y1) / 2)
     # Room at the bed's edge for the brim and skirt (a QIDI preset's skirt ran off the
-    # bed at 5 mm), without eating the strip the tower needs on the far side.
-    share = 2 if bed.tower is None else 4
-    mx, my = min(max(5.0, bed.edge), spare_x / share), min(max(5.0, bed.edge), spare_y / share)
+    # bed at 5 mm), without eating the strip the tower needs on the far side -- where
+    # that side can hold a tower at all; where it can't, the model takes the room.
+    b = bed.tower_brim
+    share_x = 4 if bed.tower is not None and spare_x >= tw + 2 * b + TOWER_SLACK else 2
+    share_y = 4 if bed.tower is not None and spare_y >= td + 2 * b + TOWER_SLACK else 2
+    mx, my = min(max(5.0, bed.edge), spare_x / share_x), min(max(5.0, bed.edge), spare_y / share_y)
     edges = {
         "left":  ((bed.x0 + mx + w / 2, mid[1]), (bed.x0 + mx + w, bed.y0, bed.x1, bed.y1)),
         "front": ((mid[0], bed.y0 + my + d / 2), (bed.x0, bed.y0 + my + d, bed.x1, bed.y1)),
@@ -315,7 +340,7 @@ def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
         center, strip = edges[name]
         tx = min(max((strip[0] + strip[2] - tw) / 2, bed.x0 + b), bed.x1 - tw - b)
         ty = min(max((strip[1] + strip[3] - td) / 2, bed.y0 + b), bed.y1 - td - b)
-        crowded = strip[2] - strip[0] < tw + 2 * b + 2 or strip[3] - strip[1] < td + 2 * b + 2
+        crowded = strip[2] - strip[0] < tw + 2 * b + TOWER_SLACK or strip[3] - strip[1] < td + 2 * b + TOWER_SLACK
         out.append((center, (tx, ty), crowded))
     return out
 
@@ -343,9 +368,12 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
             tower = (min(max(bed.tower_at[0], bed.x0), bed.x1 - tw), min(max(bed.tower_at[1], bed.y0), bed.y1 - td))
     else:
         def clash(c: tuple, t: Optional[tuple]) -> bool:
-            boxes = [(c[0] - w / 2, c[1] - d / 2, c[0] + w / 2, c[1] + d / 2)]
+            # The model with its brim and skirt: the QIDI Q2's brim reached its corner
+            # exclusion from a model 1.6 mm clear of it ("unprintable area").
+            e = bed.edge
+            boxes = [(c[0] - w / 2 - e, c[1] - d / 2 - e, c[0] + w / 2 + e, c[1] + d / 2 + e)]
             if t is not None:
-                b = bed.tower_brim
+                b = bed.tower_brim + EXCLUSION_GAP
                 boxes.append((t[0] - b, t[1] - b, t[0] + tw + b, t[1] + td + b))
             return any(verify.overlaps(box, r) for box in boxes for r in bed.exclusions)
 
@@ -364,9 +392,79 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
                                   ox + center[0] - (lo[0] + hi[0]) / 2,
                                   oy + center[1] - (lo[1] + hi[1]) / 2,
                                   plate.lo[2] - lo[2])))  # the bottom stays on the bed
+    if fits and tower is not None and (crowded or excluded) and plate.cells:
+        # No strip beside the bounding box: put the tower where the outline leaves room.
+        outline = verify.map_cells(plate.cells, lambda x, y: (lambda p: (p[0] - ox, p[1] - oy))(
+            move.apply_point(x, y, 0.0)))
+        spot = tower_spot(outline, bed, tw, td, center)
+        if spot is not None:
+            tower, crowded = spot, False
+            excluded = clash(center, tower)
     transforms = {oid: Transform.parse(tr).compose(move).to_string() for oid, tr in plate.items}
     return Placement(rotated, (w, d, sz), transforms, tower, crowded, fits,
                      1.0 if fits else fit_scale(plate.size, bed), excluded)
+
+
+# Room kept between the prime tower's brim and the model's outline, tried widest
+# first; and between the brim and the bed's edge, where Bambu Studio checks the
+# tower with more conservative parameters than it slices with.
+TOWER_CLEARANCES = (10.0, 6.0, 3.0)
+TOWER_EDGE = 2.0
+# Kept between the tower's brim and an exclusion area: OrcaSlicer refused a Kobra 3
+# tower whose brim stopped short of the bed's 2 mm frame ("too close to exclusion area").
+EXCLUSION_GAP = 3.0
+
+
+def tower_spot(outline: set, bed: Bed, tw: float, td: float, center: tuple) -> Optional[tuple]:
+    """A prime tower corner on the bed clear of the model's outline, or None.
+
+    Of the spots clear by the widest clearance that leaves any, the one nearest the
+    bed's edge, then farthest from the model's center: out of the way, like a person
+    would put it.
+    """
+    b, step = bed.tower_brim, verify.CELL
+    # The skirt goes around the tower too (the QIDI Q2's ran off the bed from 2 mm).
+    e = b + max(TOWER_EDGE, bed.edge)
+    xs = [bed.x0 + e + k * step for k in range(int((bed.width - tw - 2 * e) // step) + 1)]
+    ys = [bed.y0 + e + k * step for k in range(int((bed.depth - td - 2 * e) // step) + 1)]
+    # A summed-area table of the outline over the bed and a margin around it, so
+    # each spot's check is four lookups.
+    pad = int(max(TOWER_CLEARANCES) // step) + 2
+    i0, j0 = math.floor(bed.x0 / step) - pad, math.floor(bed.y0 / step) - pad
+    ni, nj = math.floor(bed.x1 / step) + pad - i0 + 1, math.floor(bed.y1 / step) + pad - j0 + 1
+    sat = [[0] * (nj + 1) for _ in range(ni + 1)]
+    for i in range(ni):
+        row, prev = sat[i + 1], sat[i]
+        run = 0
+        for j in range(nj):
+            run += (i + i0, j + j0) in outline
+            row[j + 1] = prev[j + 1] + run
+
+    def hits(r: tuple) -> bool:
+        a0 = min(max(math.floor(r[0] / step) - i0, 0), ni)
+        a1 = min(max(math.floor((r[2] - 1e-9) / step) - i0 + 1, 0), ni)
+        c0 = min(max(math.floor(r[1] / step) - j0, 0), nj)
+        c1 = min(max(math.floor((r[3] - 1e-9) / step) - j0 + 1, 0), nj)
+        return sat[a1][c1] - sat[a0][c1] - sat[a1][c0] + sat[a0][c0] > 0
+
+    for clear in TOWER_CLEARANCES:
+        best = None
+        for tx in xs:
+            for ty in ys:
+                body = (tx - b, ty - b, tx + tw + b, ty + td + b)
+                near = (body[0] - EXCLUSION_GAP, body[1] - EXCLUSION_GAP, body[2] + EXCLUSION_GAP, body[3] + EXCLUSION_GAP)
+                if any(verify.overlaps(near, r) for r in bed.exclusions):
+                    continue
+                if hits((body[0] - clear, body[1] - clear, body[2] + clear, body[3] + clear)):
+                    continue
+                edge = min(tx - bed.x0, ty - bed.y0, bed.x1 - tx - tw, bed.y1 - ty - td)
+                away = math.hypot(tx + tw / 2 - center[0], ty + td / 2 - center[1])
+                score = (round(edge, 3), -away)
+                if best is None or score < best[0]:
+                    best = (score, (tx, ty))
+        if best is not None:
+            return best[1]
+    return None
 
 
 # Prime tower widths tried, as multiples of the printer's own, when its own
@@ -377,17 +475,31 @@ TOWER_WIDTHS = (1.0, 1.5, 2.0, 3.0, 4.0, 0.75, 0.5)
 MIN_TOWER_WIDTH = 15.0  # mm; narrower than this, a tall tower gets wobbly
 
 
-def place_all(slug: str, plates: list[Plate], bed: Bed, area: float) -> tuple[list[Placement], Optional[float]]:
-    """Every plate placed, and the prime tower width that leaves each one room (one width per file)."""
+# The prime tower brim tried when the printer's is auto and its tower finds no room:
+# the A1's own. Auto came to about 8 mm on Bambu Studio's H2 and P2S towers.
+CROWDED_TOWER_BRIM = 3.0
+
+
+def place_all(slug: str, plates: list[Plate], bed: Bed,
+              cfg: dict) -> tuple[list[Placement], Optional[float], Optional[float]]:
+    """Every plate placed, and the prime tower width -- and brim, if the printer's auto
+    brim had to give way -- that leave each one room (one of each per file).
+
+    `cfg` is the settings the file will have, which size the tower.
+    """
     if bed.tower is None:
-        return [place(slug, p, len(plates), bed) for p in plates], None
+        return [place(slug, p, len(plates), bed) for p in plates], None, None
     widths = [bed.tower] + [bed.tower * f for f in TOWER_WIDTHS[1:] if MIN_TOWER_WIDTH <= bed.tower * f <= bed.width / 2]
+    auto = verify._first(cfg.get("prime_tower_brim_width")) < 0
     first = None
-    for tw in widths:
-        placements = [place(slug, p, len(plates), bed, tw, area / tw) for p in plates]
-        if not any(pl.crowded for pl in placements if pl.fits):
-            return placements, tw
-        first = first or (placements, tw)
+    for brim in [None] + ([CROWDED_TOWER_BRIM] if auto else []):
+        b = bed if brim is None else replace(bed, tower_brim=brim)
+        for tw in widths:
+            fw, fd, _brim = verify.tower_size(cfg, tw)
+            placements = [place(slug, p, len(plates), b, fw, fd) for p in plates]
+            if not any(pl.crowded for pl in placements if pl.fits):
+                return placements, tw, brim
+            first = first or (placements, tw, None)
     return first  # crowded at any width: the printer's own, and a warning
 
 
@@ -530,7 +642,7 @@ def guard_ace(gcode: str) -> Optional[str]:
 
 def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[dict], used: list[int],
             mapping: dict, carried: dict, placements: list[Placement], bed: Bed,
-            tower_width: Optional[float]) -> dict:
+            tower_width: Optional[float], tower_brim: Optional[float] = None) -> dict:
     """The file's project_settings.config for printer `key`."""
     base = tsettings["PLA"]
     types = [BAMBU_TYPES[f["type"]] for f in ordered]
@@ -606,12 +718,23 @@ def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[
     if tower_width is not None and abs(tower_width - bed.tower) > 1e-6:
         s["prime_tower_width"] = f"{tower_width:g}"
         changed.add("prime_tower_width")
+    if tower_brim is not None:
+        s["prime_tower_brim_width"] = f"{tower_brim:g}"
+        changed.add("prime_tower_brim_width")
+    # The tower is placed unturned: the Creality Hi's preset turns it 90 degrees, which
+    # ran its 60 mm off the back of the bed from the spot left for it.
+    if bed.tower is not None and float(s.get("wipe_tower_rotation_angle") or 0) % 360:
+        s["wipe_tower_rotation_angle"] = "0"
+        changed.add("wipe_tower_rotation_angle")
     if changed:
         s["different_settings_to_system"][0] = ";".join(sorted(changed))
     if bed.tower is not None:
         s["wipe_tower_x"] = [f"{pl.tower[0]:.3f}" for pl in placements]
         s["wipe_tower_y"] = [f"{pl.tower[1]:.3f}" for pl in placements]
     return s
+
+
+READ_BACK_LIMIT = 180  # seconds
 
 
 def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
@@ -633,7 +756,17 @@ def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
                 zout.writestr(item, data)
         (tmp / "out").mkdir()
         slicer = SLICERS[PRINTERS[key].slicer]
-        run = run_slicer([slicer.binary, "--outputdir", tmp / "out", "--export-3mf", "back.3mf", probe], timeout=600)
+        # A read-back takes seconds. Bambu Studio's command line now and then never
+        # exits (Windows, 2.8.2): one that hangs gets one more try.
+        for attempt in range(2):
+            try:
+                run = run_slicer([slicer.binary, "--outputdir", tmp / "out", "--export-3mf", "back.3mf", probe],
+                                 timeout=READ_BACK_LIMIT)
+                break
+            except subprocess.TimeoutExpired:
+                if attempt:
+                    raise Refusal(f"{slicer.name} hung reading the {PRINTERS[key].label} settings back, twice "
+                                  f"({READ_BACK_LIMIT // 60} min each)") from None
         back = tmp / "out" / "back.3mf"
         if run.returncode != 0 or not back.exists():
             log = (run.stdout + run.stderr).splitlines()
@@ -786,9 +919,9 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bo
     likely = {**base, **carried, "filament_colour": [f["color"] for f in m.ordered],
               "flush_volumes_matrix": flush_matrix(m.src_cfg, m.used, base)}
     bed = Bed.of(likely)  # the carried brim and skirt decide the room kept at the edge
-    placements, tower_width = place_all(m.slug, m.plates, bed, verify.tower_area(likely))
+    placements, tower_width, tower_brim = place_all(m.slug, m.plates, bed, likely)
     settings = compose(key, meta, tsettings, m.src_cfg, m.ordered, m.used, m.mapping, carried, placements, bed,
-                       tower_width)
+                       tower_width, tower_brim)
     settings, dropped = settle(key, settings, carried, base)
 
     transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
@@ -876,6 +1009,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bo
         print("       kept the printer's own " + "; ".join(f"{k} ({why})" for k, why in dropped.items()))
     if tower_width is not None and abs(tower_width - bed.tower) > 1e-6:
         print(f"       prime tower {tower_width:g} mm wide (the printer's is {bed.tower:g}) to fit the space left")
+    if tower_brim is not None:
+        print(f"       prime tower brim {tower_brim:g} mm (the printer's is auto) to fit the space left")
     worked_around = [k for k, v in SLICER_WORKAROUNDS.items() if base.get(k) not in (None, v)]
     if worked_around:
         print(f"       {', '.join(worked_around)} off: {SLICERS[printer.slicer].name} hangs on it")
@@ -929,6 +1064,10 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
         except Refusal as e:
             print(f"  SKIP {name} {PRINTERS[k].label}\n!! {e}")
             withdraw(out_path(out, name, k, prefix), "it was refused")
+            ok = False
+        except Exception as e:  # a bug or a slicer gone wrong: this printer fails, the rest still get theirs
+            print(f"  FAIL {name} {PRINTERS[k].label}\n!! {type(e).__name__}: {e}")
+            withdraw(out_path(out, name, k, prefix), "it failed")
             ok = False
         made, failed = made + ok, failed + (not ok)
     del m

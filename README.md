@@ -86,7 +86,7 @@ or [add it](docs/adding-a-printer.md).
 
 ## Install
 
-SlicerBridge runs on **macOS** and **Windows** ([what's been tried there](docs/install.md#windows); Linux:
+SlicerBridge runs on **macOS** and **Windows** ([what's different there](docs/install.md#windows); Linux:
 [help wanted](docs/install.md#linux)), with Python 3.10 or newer.
 
 ```bash

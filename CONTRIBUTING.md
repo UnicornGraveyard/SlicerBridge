@@ -39,7 +39,7 @@ Run them before a pull request that changes an engine, a check or the printer ta
   `slicerbridge brand-check` on it and open a "Slicer compatibility" issue with the output, the slicer's
   version, and where in its source the behavior comes from if you can find it.
 - **Linux.** The slicer paths and profile folders are the missing pieces ([docs/install.md](docs/install.md#linux)).
-- **Windows.** Trying OrcaSlicer, PrusaSlicer and the brand slicers there, and saying where they installed
+- **Windows.** Trying the brand slicers and the OrcaSlicer and PrusaSlicer installers there, and saying where they installed
   ([docs/install.md](docs/install.md#windows)).
 - **Other filament types** than PLA, PETG and ABS (Prusa printers take PLA only so far).
 

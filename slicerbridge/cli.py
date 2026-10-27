@@ -54,10 +54,15 @@ def _parse_map(text: str | None) -> dict | None:
     return mapping
 
 
+def _abs(path: str) -> Path:
+    """A path the slicers can open: they run in the temp folder, so a relative one isn't found there."""
+    return Path(path).expanduser().resolve()
+
+
 def _files(paths: list[str]) -> list[Path]:
     """The .3mf files named, and those in the folders named (one level down too)."""
     out: list[Path] = []
-    for p in map(Path, paths):
+    for p in map(_abs, paths):
         if p.is_dir():
             out += sorted(f for f in [*p.glob("*.3mf"), *p.glob("*/*.3mf")]
                           if not f.name.startswith("partial - ") and "_previous" not in f.parts)
@@ -84,7 +89,7 @@ def _report(f: Path, info: list[str], problems: list[str], warnings: list[str]) 
 
 def _model(path: str) -> Path:
     """A project SlicerBridge can read: a multicolor .3mf saved by Bambu Studio, OrcaSlicer or a fork of either."""
-    src = Path(path).expanduser()
+    src = _abs(path)
     if src.suffix.lower() != ".3mf" or not src.is_file():
         raise SystemExit(f"!! not a .3mf file: {src}")
     try:
@@ -128,7 +133,7 @@ def cmd_convert(a: argparse.Namespace) -> int:
     for engine, ks in _by_engine(keys).items():
         mod = _engine(engine)
         kwargs = {"explicit": explicit} if engine == "prusa" else {}
-        m, f = mod.convert(src, name, ks, Path(a.out), prefix, a.slice, **kwargs)
+        m, f = mod.convert(src, name, ks, _abs(a.out), prefix, a.slice, **kwargs)
         made, failed = made + m, failed + f
     print(f"\n{made} file(s) written to {Path(a.out) / name}, {failed} refused or failed.")
     return 1 if failed else 0
@@ -168,7 +173,7 @@ def cmd_printers(a: argparse.Namespace) -> int:
 def cmd_verify(a: argparse.Namespace) -> int:
     from .checks import orca as orca_check, u1 as u1_check
     files = _files(a.paths)
-    src = Path(a.source).expanduser() if a.source else None
+    src = _abs(a.source) if a.source else None
     if not files:
         print("No .3mf files found.")
         return 0
@@ -176,10 +181,13 @@ def cmd_verify(a: argparse.Namespace) -> int:
     for f in files:
         key = printer_of(f)
         if key:
-            info, problems, warnings = orca_check.audit(f, src, key)
-            if a.slice and not problems:
-                si, sp, sw = orca_check.slice_check(f, key)
-                info, problems, warnings = info + si, problems + sp, warnings + sw
+            try:
+                info, problems, warnings = orca_check.audit(f, src, key)
+                if a.slice and not problems:
+                    si, sp, sw = orca_check.slice_check(f, key)
+                    info, problems, warnings = info + si, problems + sp, warnings + sw
+            except Exception as e:  # one file's failure doesn't stop the others being checked
+                info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif f.name.endswith(f" - {U1_LABEL}.3mf"):
             (info, problems), warnings = u1_check.audit(f, src), []
         elif any(p.label in f.name for p in PRUSA_PRINTERS.values()):
@@ -343,9 +351,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):  # not when the MCP server captures it
         sys.stdout.reconfigure(line_buffering=True)  # a long run shows each file as it lands
-        if sys.platform == "win32":  # piped or redirected, Windows writes its code page, which has no ⚠ or ✓
-            for stream in (sys.stdout, sys.stderr):
-                stream.reconfigure(encoding="utf-8", errors="replace")
+        # Windows writes a pipe or a file in its ANSI code page, which has no ✓ or ⚠: the
+        # first warning ended the run with a UnicodeEncodeError, files still to write.
+        for stream in (sys.stdout, sys.stderr):
+            stream.reconfigure(encoding="utf-8")
     a = build_parser().parse_args(argv)
     try:
         return a.run(a)

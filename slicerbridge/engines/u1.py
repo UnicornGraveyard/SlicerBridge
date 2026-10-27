@@ -664,6 +664,9 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
         return 0, 1
+    except Exception as e:  # a bug: this printer fails, the other engines still run
+        print(f"  FAIL {name} {U1_LABEL}\n!! {type(e).__name__}: {e}")
+        return 0, 1
     finally:
         gc.collect()
     return 1, 0
