@@ -41,7 +41,7 @@ import stat
 import subprocess
 import tempfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
@@ -302,6 +302,12 @@ def orientation(size: tuple, bed: Bed) -> Optional[bool]:
     return None
 
 
+# A strip must hold the estimated tower with this much to spare, or the tower goes
+# where the outline leaves room: the estimate runs short (IronJaw's P2S tower printed
+# 8 mm deeper than its A1 one, from the same estimate).
+TOWER_SLACK = 12.0
+
+
 def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
     """Candidate (model center, tower position or None, crowded) on the bed, best first.
 
@@ -331,7 +337,7 @@ def spots(w: float, d: float, bed: Bed, tw: float, td: float) -> list[tuple]:
         center, strip = edges[name]
         tx = min(max((strip[0] + strip[2] - tw) / 2, bed.x0 + b), bed.x1 - tw - b)
         ty = min(max((strip[1] + strip[3] - td) / 2, bed.y0 + b), bed.y1 - td - b)
-        crowded = strip[2] - strip[0] < tw + 2 * b + 2 or strip[3] - strip[1] < td + 2 * b + 2
+        crowded = strip[2] - strip[0] < tw + 2 * b + TOWER_SLACK or strip[3] - strip[1] < td + 2 * b + TOWER_SLACK
         out.append((center, (tx, ty), crowded))
     return out
 
@@ -361,7 +367,7 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
         def clash(c: tuple, t: Optional[tuple]) -> bool:
             boxes = [(c[0] - w / 2, c[1] - d / 2, c[0] + w / 2, c[1] + d / 2)]
             if t is not None:
-                b = bed.tower_brim
+                b = bed.tower_brim + EXCLUSION_GAP
                 boxes.append((t[0] - b, t[1] - b, t[0] + tw + b, t[1] + td + b))
             return any(verify.overlaps(box, r) for box in boxes for r in bed.exclusions)
 
@@ -398,6 +404,9 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
 # tower with more conservative parameters than it slices with.
 TOWER_CLEARANCES = (10.0, 6.0, 3.0)
 TOWER_EDGE = 2.0
+# Kept between the tower's brim and an exclusion area: OrcaSlicer refused a Kobra 3
+# tower whose brim stopped short of the bed's 2 mm frame ("too close to exclusion area").
+EXCLUSION_GAP = 3.0
 
 
 def tower_spot(outline: set, bed: Bed, tw: float, td: float, center: tuple) -> Optional[tuple]:
@@ -435,7 +444,8 @@ def tower_spot(outline: set, bed: Bed, tw: float, td: float, center: tuple) -> O
         for tx in xs:
             for ty in ys:
                 body = (tx - b, ty - b, tx + tw + b, ty + td + b)
-                if any(verify.overlaps(body, r) for r in bed.exclusions):
+                near = (body[0] - EXCLUSION_GAP, body[1] - EXCLUSION_GAP, body[2] + EXCLUSION_GAP, body[3] + EXCLUSION_GAP)
+                if any(verify.overlaps(near, r) for r in bed.exclusions):
                     continue
                 if hits((body[0] - clear, body[1] - clear, body[2] + clear, body[3] + clear)):
                     continue
@@ -457,21 +467,31 @@ TOWER_WIDTHS = (1.0, 1.5, 2.0, 3.0, 4.0, 0.75, 0.5)
 MIN_TOWER_WIDTH = 15.0  # mm; narrower than this, a tall tower gets wobbly
 
 
-def place_all(slug: str, plates: list[Plate], bed: Bed, cfg: dict) -> tuple[list[Placement], Optional[float]]:
-    """Every plate placed, and the prime tower width that leaves each one room (one width per file).
+# The prime tower brim tried when the printer's is auto and its tower finds no room:
+# the A1's own. Auto came to about 8 mm on Bambu Studio's H2 and P2S towers.
+CROWDED_TOWER_BRIM = 3.0
+
+
+def place_all(slug: str, plates: list[Plate], bed: Bed,
+              cfg: dict) -> tuple[list[Placement], Optional[float], Optional[float]]:
+    """Every plate placed, and the prime tower width -- and brim, if the printer's auto
+    brim had to give way -- that leave each one room (one of each per file).
 
     `cfg` is the settings the file will have, which size the tower.
     """
     if bed.tower is None:
-        return [place(slug, p, len(plates), bed) for p in plates], None
+        return [place(slug, p, len(plates), bed) for p in plates], None, None
     widths = [bed.tower] + [bed.tower * f for f in TOWER_WIDTHS[1:] if MIN_TOWER_WIDTH <= bed.tower * f <= bed.width / 2]
+    auto = verify._first(cfg.get("prime_tower_brim_width")) < 0
     first = None
-    for tw in widths:
-        fw, fd, _brim = verify.tower_size(cfg, tw)
-        placements = [place(slug, p, len(plates), bed, fw, fd) for p in plates]
-        if not any(pl.crowded for pl in placements if pl.fits):
-            return placements, tw
-        first = first or (placements, tw)
+    for brim in [None] + ([CROWDED_TOWER_BRIM] if auto else []):
+        b = bed if brim is None else replace(bed, tower_brim=brim)
+        for tw in widths:
+            fw, fd, _brim = verify.tower_size(cfg, tw)
+            placements = [place(slug, p, len(plates), b, fw, fd) for p in plates]
+            if not any(pl.crowded for pl in placements if pl.fits):
+                return placements, tw, brim
+            first = first or (placements, tw, None)
     return first  # crowded at any width: the printer's own, and a warning
 
 
@@ -614,7 +634,7 @@ def guard_ace(gcode: str) -> Optional[str]:
 
 def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[dict], used: list[int],
             mapping: dict, carried: dict, placements: list[Placement], bed: Bed,
-            tower_width: Optional[float]) -> dict:
+            tower_width: Optional[float], tower_brim: Optional[float] = None) -> dict:
     """The file's project_settings.config for printer `key`."""
     base = tsettings["PLA"]
     types = [BAMBU_TYPES[f["type"]] for f in ordered]
@@ -690,6 +710,14 @@ def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[
     if tower_width is not None and abs(tower_width - bed.tower) > 1e-6:
         s["prime_tower_width"] = f"{tower_width:g}"
         changed.add("prime_tower_width")
+    if tower_brim is not None:
+        s["prime_tower_brim_width"] = f"{tower_brim:g}"
+        changed.add("prime_tower_brim_width")
+    # The tower is placed unturned: the Creality Hi's preset turns it 90 degrees, which
+    # ran its 60 mm off the back of the bed from the spot left for it.
+    if bed.tower is not None and float(s.get("wipe_tower_rotation_angle") or 0) % 360:
+        s["wipe_tower_rotation_angle"] = "0"
+        changed.add("wipe_tower_rotation_angle")
     if changed:
         s["different_settings_to_system"][0] = ";".join(sorted(changed))
     if bed.tower is not None:
@@ -884,9 +912,9 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bo
     likely = {**base, **carried, "filament_colour": [f["color"] for f in m.ordered],
               "flush_volumes_matrix": flush_matrix(m.src_cfg, m.used, base)}
     bed = Bed.of(likely)  # the carried brim and skirt decide the room kept at the edge
-    placements, tower_width = place_all(m.slug, m.plates, bed, likely)
+    placements, tower_width, tower_brim = place_all(m.slug, m.plates, bed, likely)
     settings = compose(key, meta, tsettings, m.src_cfg, m.ordered, m.used, m.mapping, carried, placements, bed,
-                       tower_width)
+                       tower_width, tower_brim)
     settings, dropped = settle(key, settings, carried, base)
 
     transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
@@ -974,6 +1002,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bo
         print("       kept the printer's own " + "; ".join(f"{k} ({why})" for k, why in dropped.items()))
     if tower_width is not None and abs(tower_width - bed.tower) > 1e-6:
         print(f"       prime tower {tower_width:g} mm wide (the printer's is {bed.tower:g}) to fit the space left")
+    if tower_brim is not None:
+        print(f"       prime tower brim {tower_brim:g} mm (the printer's is auto) to fit the space left")
     worked_around = [k for k, v in SLICER_WORKAROUNDS.items() if base.get(k) not in (None, v)]
     if worked_around:
         print(f"       {', '.join(worked_around)} off: {SLICERS[printer.slicer].name} hangs on it")
