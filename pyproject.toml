@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "slicerbridge"
 dynamic = ["version"]
-description = "Any multicolor 3MF project (Bambu Studio, OrcaSlicer or a maker's fork) in, a ready, verified file for every multicolor printer out: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa and the Snapmaker U1."
+description = "Any multicolor 3MF project (Bambu Studio, OrcaSlicer or a maker's fork) in, a ready, verified file for every multicolor printer out: Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker, Prusa and the Snapmaker U1."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
@@ -15,7 +15,7 @@ requires-python = ">=3.10"
 # mcp is a dependency, not an extra, so `uvx slicerbridge mcp` runs the MCP server as published.
 dependencies = ["lxml>=4.9", "mcp>=1.2,<3"]
 keywords = ["3mf", "3d-printing", "multicolor", "bambu-studio", "orcaslicer", "prusaslicer", "creality",
-            "elegoo", "anycubic", "flashforge", "qidi", "snapmaker", "converter"]
+            "elegoo", "anycubic", "flashforge", "qidi", "wondermaker", "snapmaker", "converter"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

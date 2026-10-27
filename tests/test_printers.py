@@ -6,7 +6,7 @@ from slicerbridge import printers as P
 
 
 def test_every_key_has_one_engine_and_a_label():
-    assert len(P.ALL) == len(set(P.ALL)) == 30
+    assert len(P.ALL) == len(set(P.ALL)) == 34
     for k in P.ALL:
         assert P.engine_of(k) in ("orca", "prusa", "u1")
         assert P.label_of(k) and P.tools_of(k) >= 4

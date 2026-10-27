@@ -16,7 +16,7 @@ def test_version(capsys):
 
 def test_printers_lists_every_printer(capsys):
     assert main(["printers"]) == 0
-    assert "30 printers" in capsys.readouterr().out
+    assert "34 printers" in capsys.readouterr().out
 
 
 def test_inspect_reports_used_slots_and_fit(project, capsys):

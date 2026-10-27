@@ -41,14 +41,14 @@ WRITES = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHi
 mcp = MCPServer("slicerbridge", instructions=(
     "SlicerBridge converts a multicolor .3mf project, saved by Bambu Studio, OrcaSlicer or a maker's fork of either "
     "(Creality Print, ElegooSlicer, Anycubic Slicer Next, Flash Studio, QIDI Studio), into a ready, checked file for each "
-    "multicolor printer (Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, Prusa, Snapmaker U1). "
+    "multicolor printer (Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker, Prusa, Snapmaker U1). "
     "Start with inspect_model to see the colors a model uses and how it fits each bed, then convert_model. "
     "A file SlicerBridge wrote can go back in for another printer. PrusaSlicer projects aren't read yet. "
     "A file that fails a check is never written; the result says why. Paths are on the user's machine."))
 
 PRINTERS = Annotated[str, Field(description=(
     "Which printers: 'all', a set (" + ", ".join(SETS) + "), a vendor (bambu, creality, elegoo, anycubic, "
-    "flashforge, qidi, prusa, snapmaker), or printer keys from list_printers, comma-separated."))]
+    "flashforge, qidi, wondermaker, prusa, snapmaker), or printer keys from list_printers, comma-separated."))]
 PATHS = Annotated[list[str], Field(description=".3mf files, or folders of them.")]
 
 
