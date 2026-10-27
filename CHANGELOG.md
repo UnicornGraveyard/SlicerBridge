@@ -14,9 +14,13 @@
 - After each release, `python scripts/release.py plugin <version>` moves the plugin to it and relocks, so the
   plugin only ever names a version that's on PyPI.
 - The plugin has an icon: the Unicorn Graveyard logo, which isn't covered by the GPL.
-- Windows works ([docs/install.md](docs/install.md#linux-and-windows)): the CLI hands the slicers absolute
-  paths and writes UTF-8, and every text file is read as UTF-8 (a profile with an accented byte, like OrcaSlicer's
-  Kobra X, was skipped as missing).
+- Windows works ([docs/install.md](docs/install.md#windows)): the slicers are found in their installers' usual
+  folders and each one's version is read from its `.exe`; the CLI hands the slicers absolute paths and writes
+  UTF-8; every text file and slicer log is read as UTF-8 (a profile with an accented byte, like OrcaSlicer's
+  Kobra X, was skipped as missing); and a slicer crash there is recognized and retried, as on macOS. CI runs the
+  tests and the plugin on Windows too.
+- A model name or prefix with `< > : " / \ | ? *` is written with `-` in their place, so its files open on
+  Windows wherever they were made.
 - One printer failing (a slicer that hangs or crashes, a bug) no longer ends the run: that printer fails and the
   rest of its brand, and the other engines, still get their files.
 - The prime tower goes where the printer can print it: where every nozzle of an H2D or H2C reaches; sized as

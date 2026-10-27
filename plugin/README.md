@@ -11,7 +11,7 @@ printers you name, re-check or slice the files, and slice them in each maker's o
 
 ## Requirements
 
-- macOS (Linux and Windows aren't tested yet)
+- macOS or Windows (Linux isn't tested yet)
 - [uv](https://github.com/astral-sh/uv#installation), which runs the server
 - The slicers for the printers you want: OrcaSlicer 2.4.2 (Creality, Elegoo, Anycubic, Flashforge, QIDI),
   Bambu Studio (Bambu Lab), PrusaSlicer (Prusa). The Snapmaker U1 needs none.

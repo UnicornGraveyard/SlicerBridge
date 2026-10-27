@@ -53,7 +53,7 @@ from .._vendor.panda2prusa.transform import Transform
 from .. import templates as templates_build
 from ..checks import orca as verify
 from ..errors import Refusal
-from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path
+from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
 
 PAINT = re.compile(rb'( paint_color=")([0-9A-Fa-f]+)(")')
 # Filament numbers in model_settings.config: part/object extruders, and settings
@@ -760,9 +760,8 @@ def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
         # exits (Windows, 2.8.2): one that hangs gets one more try.
         for attempt in range(2):
             try:
-                run = subprocess.run([str(slicer.binary), "--outputdir", str(tmp / "out"), "--export-3mf", "back.3mf",
-                                      str(probe)], capture_output=True, cwd=tempfile.gettempdir(), text=True,
-                                     timeout=READ_BACK_LIMIT)
+                run = run_slicer([slicer.binary, "--outputdir", tmp / "out", "--export-3mf", "back.3mf", probe],
+                                 timeout=READ_BACK_LIMIT)
                 break
             except subprocess.TimeoutExpired:
                 if attempt:

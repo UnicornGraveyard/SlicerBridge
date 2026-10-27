@@ -15,8 +15,12 @@ Three engines share this table:
 """
 from __future__ import annotations
 
+import glob
 import os
+import re
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +32,8 @@ def cache_dir() -> Path:
         return Path(env).expanduser()
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Caches" / "SlicerBridge"
+    # Not %LOCALAPPDATA% on Windows: the Microsoft Store's Python writes there into a private
+    # copy that the slicers, separate programs, can't see (PrusaSlicer's --datadir is in here).
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "slicerbridge"
 
 
@@ -36,7 +42,7 @@ TEMPLATES = cache_dir() / "templates"
 
 @dataclass(frozen=True)
 class Slicer:
-    """An installed slicer: a macOS .app, or on Linux/Windows the executable itself."""
+    """An installed slicer: a macOS .app, or on Linux/Windows the executable itself (on Windows, its .exe)."""
     name: str
     app: Path
     library: str = ""  # a profiles/ folder of shared filaments that vendor presets inherit from
@@ -65,24 +71,79 @@ class Slicer:
 
 
 def _app(env: str, *candidates: str) -> Path:
-    """The slicer at $env, else the first candidate that exists, else the first candidate."""
+    """The slicer at $env, else the first candidate that exists, else the first candidate.
+
+    Candidates may name environment variables (%ProgramFiles%) and wildcards, for
+    installers that put the version in the folder name: the newest match wins.
+    """
     if os.environ.get(env):
         return Path(os.environ[env]).expanduser()
-    paths = [Path(c).expanduser() for c in candidates]
+    paths = []
+    for c in candidates:
+        c = os.path.expanduser(os.path.expandvars(c))
+        wild = any(ch in c for ch in "*?[")
+        found = sorted((Path(m) for m in glob.glob(c)), key=_newest, reverse=True) if wild else []
+        paths += found or [Path(c)]
     return next((p for p in paths if p.exists()), paths[0])
+
+
+def _newest(path: Path) -> tuple:
+    """Sorts "Creality Print 7.0" after "Creality Print 6.2", "6.10" after "6.9", and
+    "7.0" after "7.0 Beta 2": the version is the first number in the folder that has one,
+    and of the same version, the one with nothing after it is the release."""
+    part = next((p for p in reversed(path.parts) if re.search(r"\d", p)), "")
+    found = re.search(r"(\d+(?:\.\d+)*)(.*)", part)
+    if not found:
+        return (), False, ()
+    version, rest = found.groups()
+    return (tuple(int(n) for n in version.split(".")), not re.search(r"[A-Za-z]", rest),
+            tuple(int(n) for n in re.findall(r"\d+", rest)))
+
+
+def _installs(mac: tuple, windows: tuple) -> tuple:
+    """Where a slicer installs on this platform. Linux has no usual place, so the macOS paths stand
+    in there (doctor shows them as not found) and the variable says where it is."""
+    if sys.platform != "win32":
+        return mac
+    # A 32-bit Python reads %ProgramFiles% as Program Files (x86); %ProgramW6432% is the 64-bit one.
+    return windows + tuple(c.replace("%ProgramFiles%", "%ProgramW6432%") for c in windows)
+
+
+def run_slicer(cmd: list, timeout: int, cwd: Path | str | None = None) -> subprocess.CompletedProcess:
+    """Run a slicer's command line and capture what it says.
+
+    Its output is read as UTF-8 whatever the system's code page, and on Windows
+    it gets no console window of its own (the MCP server has none to share).
+    """
+    return subprocess.run([str(c) for c in cmd], capture_output=True, cwd=cwd or tempfile.gettempdir(), text=True,
+                          encoding="utf-8", errors="replace", timeout=timeout,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+# Characters Windows refuses in a file name: a file made on a Mac is still opened on Windows.
+UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def file_safe(text: str) -> str:
+    """`text` with what Windows can't put in a file name replaced by "-"."""
+    return UNSAFE.sub("-", text)
 
 
 # The slicers files are built with. SlicerBridge is tested against OrcaSlicer
 # 2.4.2: its profiles drive the Creality K1C's CFS and the Elegoo Centauri
 # Carbon's CANVAS, where 2.3.1's stopped for a manual swap at every color.
 SLICERS = {
-    "orca":  Slicer("OrcaSlicer", _app("SLICERBRIDGE_ORCASLICER", "/Applications/OrcaSlicer.app",
-                                       "~/Applications/OrcaSlicer.app"), "OrcaFilamentLibrary"),
-    "bambu": Slicer("Bambu Studio", _app("SLICERBRIDGE_BAMBU_STUDIO", "/Applications/BambuStudio.app",
-                                         "~/Applications/BambuStudio.app")),
-    "prusa": Slicer("PrusaSlicer", _app("SLICERBRIDGE_PRUSASLICER", "/Applications/PrusaSlicer.app",
-                                        "/Applications/Original Prusa Drivers/PrusaSlicer.app",
-                                        "~/Applications/PrusaSlicer.app")),
+    "orca":  Slicer("OrcaSlicer", _app("SLICERBRIDGE_ORCASLICER", *_installs(
+        mac=("/Applications/OrcaSlicer.app", "~/Applications/OrcaSlicer.app"),
+        windows=(r"%ProgramFiles%\OrcaSlicer\orca-slicer.exe",))), "OrcaFilamentLibrary"),
+    "bambu": Slicer("Bambu Studio", _app("SLICERBRIDGE_BAMBU_STUDIO", *_installs(
+        mac=("/Applications/BambuStudio.app", "~/Applications/BambuStudio.app"),
+        windows=(r"%ProgramFiles%\Bambu Studio\bambu-studio.exe",)))),
+    # On Windows, prusa-slicer.exe is the window and prints nothing: the console one answers.
+    "prusa": Slicer("PrusaSlicer", _app("SLICERBRIDGE_PRUSASLICER", *_installs(
+        mac=("/Applications/PrusaSlicer.app", "/Applications/Original Prusa Drivers/PrusaSlicer.app",
+             "~/Applications/PrusaSlicer.app"),
+        windows=(r"%ProgramFiles%\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",)))),
 }
 
 # The slicer each brand's owners download, for `slicerbridge brand-check`: the
@@ -90,23 +151,35 @@ SLICERS = {
 # presets, version check and bugs (docs/brand-slicers.md).
 # - Creality Print 7.3 opens its window unless an argument is --cli
 #   (src/CrealityPrint.cpp, parse_application_arguments), and writes
-#   plate_N.gcode to --outputdir only with --need-gcode-file.
+#   plate_N.gcode to --outputdir only with --need-gcode-file. On Windows its
+#   folder carries the version ("Creality Print 7.0"): the newest wins.
 # - QIDI Studio's command line rearranges any 3MF not stamped QIDIStudio, merging
 #   the plates; its app keeps them (qds_3mf.cpp, QIDIStudio.cpp: need_arrange).
 #   --arrange 0 slices the plates as the app opens them.
+# - Windows locations are from each fork's installer rules (CMakeLists.txt, package.cmake).
+#   Flash Studio's build names its exe "flash studio" while its shortcut points at
+#   flash-studio.exe, so both are looked for.
 BRAND_SLICERS = {
-    "Creality":   Slicer("Creality Print", _app("SLICERBRIDGE_CREALITY_PRINT", "/Applications/CrealityPrint.app",
-                                                "/Applications/Creality Print.app"),
+    "Creality":   Slicer("Creality Print", _app("SLICERBRIDGE_CREALITY_PRINT", *_installs(
+        mac=("/Applications/CrealityPrint.app", "/Applications/Creality Print.app"),
+        windows=(r"%ProgramFiles%\Creality\Creality Print *\CrealityPrint.exe",))),
                          exe="CrealityPrint", cli=("--cli", "--need-gcode-file")),
-    "Elegoo":     Slicer("ElegooSlicer", _app("SLICERBRIDGE_ELEGOOSLICER", "/Applications/ElegooSlicer.app")),
-    "Anycubic":   Slicer("Anycubic Slicer Next", _app("SLICERBRIDGE_ANYCUBIC_SLICER_NEXT",
-                                                      "/Applications/AnycubicSlicerNext.app",
-                                                      "/Applications/Anycubic Slicer Next.app"),
+    "Elegoo":     Slicer("ElegooSlicer", _app("SLICERBRIDGE_ELEGOOSLICER", *_installs(
+        mac=("/Applications/ElegooSlicer.app",),
+        windows=(r"%ProgramFiles%\ElegooSlicer\elegoo-slicer.exe",)))),
+    "Anycubic":   Slicer("Anycubic Slicer Next", _app("SLICERBRIDGE_ANYCUBIC_SLICER_NEXT", *_installs(
+        mac=("/Applications/AnycubicSlicerNext.app", "/Applications/Anycubic Slicer Next.app"),
+        windows=(r"%ProgramFiles%\AnycubicSlicer\AnycubicSlicerNext.exe",
+                 r"%ProgramFiles%\AnycubicSlicerNext\AnycubicSlicerNext.exe"))),
                          exe="AnycubicSlicerNext"),
-    "Flashforge": Slicer("Flash Studio", _app("SLICERBRIDGE_FLASH_STUDIO", "/Applications/Flash Studio.app",
-                                              "/Applications/FlashStudio.app"), exe="Flash Studio"),
-    "Qidi":       Slicer("QIDI Studio", _app("SLICERBRIDGE_QIDI_STUDIO", "/Applications/QIDIStudio.app",
-                                             "/Applications/QIDI Studio.app"),
+    "Flashforge": Slicer("Flash Studio", _app("SLICERBRIDGE_FLASH_STUDIO", *_installs(
+        mac=("/Applications/Flash Studio.app", "/Applications/FlashStudio.app"),
+        windows=(r"%ProgramFiles%\Orca-Flashforge\flash-studio.exe", r"%ProgramFiles%\Orca-Flashforge\flash studio.exe",
+                 r"%ProgramFiles%\Flash Studio\flash-studio.exe", r"%ProgramFiles%\Flash Studio\flash studio.exe"))),
+                         exe="Flash Studio"),
+    "Qidi":       Slicer("QIDI Studio", _app("SLICERBRIDGE_QIDI_STUDIO", *_installs(
+        mac=("/Applications/QIDIStudio.app", "/Applications/QIDI Studio.app"),
+        windows=(r"%ProgramFiles%\QIDIStudio\qidi-studio-console.exe", r"%ProgramFiles%\QIDIStudio\qidi-studio.exe"))),
                          exe="QIDIStudio", cli=("--arrange", "0")),
 }
 

@@ -20,13 +20,13 @@ import json
 import re
 import plistlib
 import shutil
-import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 from .errors import Refusal
-from .printers import PRINTERS, SLICERS, TEMPLATES, Slicer
+from .printers import PRINTERS, SLICERS, TEMPLATES, Slicer, run_slicer
 
 # Not filament settings, though some filament preset files carry them.
 NOT_FILAMENT = {"from", "name", "inherits", "instantiation", "setting_id", "filament_id",
@@ -40,9 +40,30 @@ def app_version(slicer: Slicer) -> str:
     if slicer.app.suffix == ".app":
         with open(slicer.app / "Contents" / "Info.plist", "rb") as f:
             return plistlib.load(f)["CFBundleShortVersionString"]
-    run = subprocess.run([str(slicer.binary), *slicer.cli, "--help"], capture_output=True, cwd=tempfile.gettempdir(), text=True, timeout=120)
+    if sys.platform == "win32" and (version := _exe_version(slicer.binary)):
+        return version
+    run = run_slicer([slicer.binary, *slicer.cli, "--help"], timeout=120)
     found = re.search(r"\b(\d+\.\d+\.\d+(?:\.\d+)?)\b", run.stdout + run.stderr)
     return found.group(1) if found else "unknown"
+
+
+def _exe_version(exe: Path) -> str | None:
+    """A Windows program's version, from the .exe itself: these slicers' --help doesn't say."""
+    import ctypes
+    from ctypes import wintypes
+
+    lib = ctypes.WinDLL("version")
+    size = lib.GetFileVersionInfoSizeW(str(exe), None)
+    data = ctypes.create_string_buffer(size)
+    if not size or not lib.GetFileVersionInfoW(str(exe), 0, size, data):
+        return None
+    info, length = ctypes.c_void_p(), wintypes.UINT()
+    if not lib.VerQueryValueW(data, "\\", ctypes.byref(info), ctypes.byref(length)) or not info.value:
+        return None
+    fixed = ctypes.cast(info, ctypes.POINTER(wintypes.DWORD * 13)).contents  # VS_FIXEDFILEINFO
+    ms, ls = fixed[4], fixed[5]  # dwProductVersionMS, dwProductVersionLS
+    parts = [ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF]
+    return ".".join(str(n) for n in (parts if parts[3] else parts[:3]))
 
 
 def preset_index(vendor: str, slicer: Slicer = SLICERS["orca"]) -> dict:
@@ -303,7 +324,7 @@ def build(key: str) -> list[str]:
         return [f"print preset '{p.process}' doesn't list '{p.machine}' as compatible"]
 
     dest = TEMPLATES / key
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         tmp = Path(tmp)
         _cube(tmp / "cube.stl")
         (tmp / "out").mkdir()
@@ -314,12 +335,12 @@ def build(key: str) -> list[str]:
             if ("filament", name) not in index:
                 problems.append(f"no filament preset '{name}' in {slicer.profiles / p.vendor}")
                 continue
-            run = subprocess.run(
-                [str(slicer.binary), "--outputdir", str(tmp / "out"),
+            run = run_slicer(
+                [slicer.binary, "--outputdir", tmp / "out",
                  "--load-settings", f"{machine};{process}",
-                 "--load-filaments", str(_for_cli("filament", name, index, tmp)),
-                 "--export-3mf", f"{ftype}.3mf", str(tmp / "cube.stl")],
-                capture_output=True, cwd=tmp, text=True, timeout=600)
+                 "--load-filaments", _for_cli("filament", name, index, tmp),
+                 "--export-3mf", f"{ftype}.3mf", tmp / "cube.stl"],
+                timeout=600, cwd=tmp)
             out = tmp / "out" / f"{ftype}.3mf"
             if run.returncode != 0 or not out.exists():
                 tail = " | ".join(line for line in (run.stdout + run.stderr).splitlines()[-4:] if line.strip())

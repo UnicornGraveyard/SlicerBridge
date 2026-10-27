@@ -8,7 +8,7 @@ SlicerBridge runs entirely on your computer.
   `uvx slicerbridge==<version>` does the same the first time it starts.
 - **It reads and writes only what you give it:** the 3MF files you name, the output folder you name (or
   `out/` beside the model), and its cache of printer settings (`~/Library/Caches/SlicerBridge` on macOS,
-  `~/.cache/slicerbridge` elsewhere, or `SLICERBRIDGE_CACHE`).
+  `~/.cache/slicerbridge` on Windows and Linux, or `SLICERBRIDGE_CACHE`).
 - **It runs your installed slicers' command lines** to build printer settings and to slice files. What those
   slicers do is up to them and their own privacy policies.
 - **The MCP server** talks only to the AI assistant that started it, over stdio. It opens no network port.

@@ -34,8 +34,8 @@ LOCK = PLUGIN / "uv.lock"
 
 def versions() -> dict[str, str]:
     """Where the package's version is written down, and what each place says."""
-    init = (ROOT / "slicerbridge" / "__init__.py").read_text()
-    server = json.loads((ROOT / "server.json").read_text())
+    init = (ROOT / "slicerbridge" / "__init__.py").read_text(encoding="utf-8")
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
     return {
         "slicerbridge/__init__.py": re.search(r'__version__ = "([^"]+)"', init).group(1),
         "server.json version": server["version"],
@@ -45,12 +45,12 @@ def versions() -> dict[str, str]:
 
 def plugin_versions() -> dict[str, str]:
     """The SlicerBridge version the plugin runs, in each place the plugin names it."""
-    pyproject = PYPROJECT.read_text()
-    locked = re.search(r'^name = "slicerbridge"\nversion = "([^"]+)"', LOCK.read_text(), re.M)
+    pyproject = PYPROJECT.read_text(encoding="utf-8")
+    locked = re.search(r'^name = "slicerbridge"\nversion = "([^"]+)"', LOCK.read_text(encoding="utf-8"), re.M)
     pin = re.search(r'"slicerbridge==([^"]+)"', pyproject)
-    launch = re.search(r'"slicerbridge==([^"]+)"', LAUNCHER.read_text())
+    launch = re.search(r'"slicerbridge==([^"]+)"', LAUNCHER.read_text(encoding="utf-8"))
     return {
-        "plugin/.claude-plugin/plugin.json": json.loads(MANIFEST.read_text())["version"],
+        "plugin/.claude-plugin/plugin.json": json.loads(MANIFEST.read_text(encoding="utf-8"))["version"],
         "plugin/.mcp.json launch pin": launch.group(1) if launch else "not pinned",
         "plugin/pyproject.toml version": re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1),
         "plugin/pyproject.toml pin": pin.group(1) if pin else "not pinned",
@@ -60,7 +60,7 @@ def plugin_versions() -> dict[str, str]:
 
 def notes(version: str) -> str:
     """The CHANGELOG section for `version`, without its heading."""
-    text = (ROOT / "CHANGELOG.md").read_text()
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     m = re.search(rf"^## {re.escape(version)}\b.*?\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     return m.group(1).strip() if m else ""
 
@@ -83,17 +83,17 @@ def check(version: str) -> list[str]:
 
 def move_plugin(version: str) -> list[str]:
     """Point the plugin at `version` (already on PyPI) and relock; returns the problems left."""
-    manifest, launcher, pyproject = MANIFEST.read_text(), LAUNCHER.read_text(), PYPROJECT.read_text()
-    MANIFEST.write_text(re.sub(r'("version": ")[^"]+(")', rf"\g<1>{version}\2", manifest, count=1))
-    LAUNCHER.write_text(re.sub(r'"slicerbridge==[^"]+"', f'"slicerbridge=={version}"', launcher))
+    manifest, launcher, pyproject = MANIFEST.read_text(encoding="utf-8"), LAUNCHER.read_text(encoding="utf-8"), PYPROJECT.read_text(encoding="utf-8")
+    MANIFEST.write_text(re.sub(r'("version": ")[^"]+(")', rf"\g<1>{version}\2", manifest, count=1), encoding="utf-8")
+    LAUNCHER.write_text(re.sub(r'"slicerbridge==[^"]+"', f'"slicerbridge=={version}"', launcher), encoding="utf-8")
     PYPROJECT.write_text(re.sub(r'"slicerbridge==[^"]+"', f'"slicerbridge=={version}"',
-                                re.sub(r'^version = "[^"]+"', f'version = "{version}"', pyproject, count=1, flags=re.M)))
+                                re.sub(r'^version = "[^"]+"', f'version = "{version}"', pyproject, count=1, flags=re.M)), encoding="utf-8")
     # --upgrade: every dependency moves to its newest release too, so the plugin's are current at each release
     lock = subprocess.run(["uv", "lock", "--upgrade", "--project", str(PLUGIN)], capture_output=True, text=True)
     if lock.returncode != 0:
-        MANIFEST.write_text(manifest)
-        LAUNCHER.write_text(launcher)
-        PYPROJECT.write_text(pyproject)
+        MANIFEST.write_text(manifest, encoding="utf-8")
+        LAUNCHER.write_text(launcher, encoding="utf-8")
+        PYPROJECT.write_text(pyproject, encoding="utf-8")
         return [f"uv lock failed, plugin left as it was (is {version} on PyPI yet?):\n{lock.stderr.strip()}"]
     return plugin_problems()
 
