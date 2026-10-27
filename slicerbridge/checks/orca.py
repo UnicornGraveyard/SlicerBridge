@@ -176,11 +176,142 @@ def outline_reach(cfg: dict) -> float:
     return brim + skirt
 
 
+def reachable_area(cfg: dict) -> tuple[float, float, float, float]:
+    """(x0, y0, x1, y1) of the bed every nozzle reaches.
+
+    A two-nozzle printer (H2D, H2C) can't reach the whole bed with either nozzle,
+    and filaments are mapped to nozzles at slicing ("Auto For Flush"): anything
+    printed must sit where both reach, or Bambu Studio finds G-code in an
+    unprintable area. A one-nozzle printer reaches its whole printable_area.
+    """
+    pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
+    x0, y0, x1, y1 = min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+    for area in cfg.get("extruder_printable_area") or []:
+        reach = [tuple(float(c) for c in p.split("x")) for p in str(area).split(",") if "x" in p]
+        if reach:
+            x0, y0 = max(x0, min(p[0] for p in reach)), max(y0, min(p[1] for p in reach))
+            x1, y1 = min(x1, max(p[0] for p in reach)), min(y1, max(p[1] for p in reach))
+    return x0, y0, x1, y1
+
+
+# Bambu Studio's auto prime tower brim (prime_tower_brim_width -1), and what its rib
+# walls add to a tower, across and deep. Measured on IronJaw (4 colors, 0.16 mm, a
+# tower_area of 1,405 mm^2, so 37.5 mm a side): an A1 tower with a 3 mm brim printed
+# 42.1 x 42.8 mm inside its brim; an H2C one on auto, 45.5 x 40.9 mm inside a brim
+# that started 8.2 mm before its corner.
+AUTO_TOWER_BRIM = 8.0
+RIB_EXTRA = (8.0, 5.5)
+
+
+def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, float]:
+    """(width, depth, brim) of the prime tower as the slicer prints it, `width` wide if given.
+
+    A tower is laid in rows the width long, so its depth is tower_area / width. With
+    rib walls (Bambu Studio's default) it's built about square instead, whatever its
+    width: sqrt(tower_area) a side, plus the ribs. A brim of -1 is auto.
+    """
+    w = width or _first(cfg.get("prime_tower_width")) or 35
+    b = _first(cfg.get("prime_tower_brim_width"))
+    b = AUTO_TOWER_BRIM if b < 0 else b
+    area = tower_area(cfg)
+    if str(cfg.get("prime_tower_rib_wall")) == "1":
+        side = math.sqrt(area)
+        return side + RIB_EXTRA[0], side + RIB_EXTRA[1], b
+    return w, area / w, b
+
+
+# The model's outline seen from above, as the cells of a CELL mm grid it covers.
+# A bounding box says a 245 x 198 mm relief leaves no room on a 256 mm bed for a
+# prime tower; its outline leaves a corner beside the head, where the designer put
+# the tower in the source.
+CELL = 2.0
+
+
+def _in_triangle(px: float, py: float, a: tuple, b: tuple, c: tuple) -> bool:
+    d1 = (px - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (py - b[1])
+    d2 = (px - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (py - c[1])
+    d3 = (px - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (py - a[1])
+    return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+
+
+def add_outline(cells: set, xs: list, ys: list, tris) -> None:
+    """Add the CELL grid cells triangles (vertex indices into xs, ys) cover, seen from above.
+
+    A small triangle marks its whole bounding box of cells; a big one the cells whose
+    centers it covers and those its edges cross, so a low-poly face leaves no gap.
+    """
+    fl, inv = math.floor, 1.0 / CELL
+    ix, iy = [fl(x * inv) for x in xs], [fl(y * inv) for y in ys]
+    for a, b, c in tris:
+        x0, x1 = min(ix[a], ix[b], ix[c]), max(ix[a], ix[b], ix[c])
+        y0, y1 = min(iy[a], iy[b], iy[c]), max(iy[a], iy[b], iy[c])
+        if x1 - x0 <= 2 and y1 - y0 <= 2:
+            for i in range(x0, x1 + 1):
+                for j in range(y0, y1 + 1):
+                    cells.add((i, j))
+            continue
+        pa, pb, pc = (xs[a], ys[a]), (xs[b], ys[b]), (xs[c], ys[c])
+        for i in range(x0, x1 + 1):
+            for j in range(y0, y1 + 1):
+                if _in_triangle((i + 0.5) * CELL, (j + 0.5) * CELL, pa, pb, pc):
+                    cells.add((i, j))
+        for p, q in ((pa, pb), (pb, pc), (pc, pa)):
+            n = int(math.hypot(q[0] - p[0], q[1] - p[1]) / (CELL / 2)) + 1
+            for k in range(n + 1):
+                t = k / n
+                cells.add((fl((p[0] + (q[0] - p[0]) * t) * inv), fl((p[1] + (q[1] - p[1]) * t) * inv)))
+
+
+def map_cells(cells: set, point) -> set:
+    """The cells of the grid that `cells` cover once each of their points goes through `point`.
+
+    Each cell's four corners are mapped (pulled a hair inside), so a move that doesn't
+    land on the grid still covers every cell the old one reaches.
+    """
+    out, fl, e = set(), math.floor, CELL * 0.49
+    for i, j in cells:
+        cx, cy = (i + 0.5) * CELL, (j + 0.5) * CELL
+        for dx, dy in ((-e, -e), (e, -e), (-e, e), (e, e)):
+            x, y = point(cx + dx, cy + dy)
+            out.add((fl(x / CELL), fl(y / CELL)))
+    return out
+
+
+def outline_hits(cells: set, rect: tuple) -> bool:
+    """Whether any cell of the outline lies in rect (x0, y0, x1, y1)."""
+    fl = math.floor
+    i0, i1 = fl(rect[0] / CELL), fl((rect[2] - 1e-9) / CELL)
+    j0, j1 = fl(rect[1] / CELL), fl((rect[3] - 1e-9) / CELL)
+    if (i1 - i0 + 1) * (j1 - j0 + 1) > len(cells):
+        return any(i0 <= i <= i1 and j0 <= j <= j1 for i, j in cells)
+    return any((i, j) in cells for i in range(i0, i1 + 1) for j in range(j0, j1 + 1))
+
+
+@functools.lru_cache(maxsize=4)
+def _plate_outlines(f: Path, stamp: float) -> dict:
+    """{plate number: outline cells in absolute coordinates, plate origin} of a written file."""
+    from ..engines import orca as engine  # the engine imports this module: import it when used
+    with zipfile.ZipFile(f) as z:
+        cfg = json.loads(z.read("Metadata/project_settings.config"))
+    _used, plates = engine.analyze(f.stem, f)
+    bed = engine.Bed.of(cfg)
+    return {p.number: (p.cells, engine.plate_origin(p.number - 1, len(plates), bed)) for p in plates}
+
+
+def plate_outline(f: Path, n: int, center: tuple, s: float) -> set | None:
+    """Plate n's outline in plate-local cells, scaled by s about `center` as the sliced copy was;
+    None when there's no outline to go by, and the bounding box decides."""
+    cells, (ox, oy) = _plate_outlines(f, f.stat().st_mtime).get(n, (set(), (0.0, 0.0)))
+    if not cells:
+        return None
+    cx, cy = center
+    return map_cells(cells, lambda x, y: (cx + (x - ox - cx) * s, cy + (y - oy - cy) * s))
+
+
 def tower_rect(cfg: dict, at: tuple) -> tuple:
     """The prime tower's likely footprint with its brim, from its corner `at`."""
-    w = _first(cfg.get("prime_tower_width")) or 35
-    b = _first(cfg.get("prime_tower_brim_width"))
-    return at[0] - b, at[1] - b, at[0] + w + b, at[1] + tower_area(cfg) / w + b
+    w, d, b = tower_size(cfg)
+    return at[0] - b, at[1] - b, at[0] + w + b, at[1] + d + b
 
 
 @functools.lru_cache(maxsize=None)
@@ -255,7 +386,11 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
         if tower and idx < len(txs) and idx < len(tys):
             tx, ty = float(txs[idx]), float(tys[idx])
             t = tower_rect(cfg, (tx, ty))
-            if overlaps(t, footprint) or not (area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]):
+            # In the bounding box is fine where the outline leaves room for it.
+            on_model = overlaps(t, footprint) and (
+                (outline := plate_outline(Path(z.filename), number, (0.0, 0.0), 1.0) if z.filename else None) is None
+                or outline_hits(outline, t))
+            if on_model or not (area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]):
                 warnings.append(f"{name}: the prime tower at {tx:.0f},{ty:.0f} (about {t[2] - t[0]:.0f} x {t[3] - t[1]:.0f} mm) "
                                 f"may touch the model or the bed's edge "
                                 f"-- slice it (--slice) and look")
@@ -474,13 +609,11 @@ def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict
     and the copy's tower goes there. `crowded`: do that to every plate, because
     at full size the tower collided with the model. Returns {plate number: scale}.
     """
-    pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
-    x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
-    bw, bd = max(p[0] for p in pts) - x0, max(p[1] for p in pts) - y0
+    x0, y0, x1, y1 = reachable_area(cfg)
+    bw, bd = x1 - x0, y1 - y0
     height = float(cfg["printable_height"])
     tower = cfg.get("enable_prime_tower") == "1"
-    tw, brim = _first(cfg.get("prime_tower_width")) or 35, _first(cfg.get("prime_tower_brim_width"))
-    td = tower_area(cfg) / tw
+    tw, td, brim = tower_size(cfg)
     with zipfile.ZipFile(f) as z:
         boxes = u1.plate_boxes(z)
         root = ET.fromstring(u1.model_settings(z))
@@ -595,6 +728,15 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
                         + ", as a downloader would scale it")
         if run.returncode != 0:
             tail = [ln for ln in log if "shader" not in ln and "gl_FragColor" not in ln and "ERROR: 0:" not in ln][-6:]
+            # Bambu Studio says why in result.json and nothing on the console.
+            result = Path(tmp) / "result.json"
+            if result.exists():
+                try:
+                    reason = json.loads(result.read_text(encoding="utf-8")).get("error_string")
+                except ValueError:
+                    reason = None
+                if reason and reason != "Success.":
+                    tail.append(reason)
             problems.append(f"{slicer.name} didn't slice it (exit {run.returncode}): " + " | ".join(tail))
             return info, problems, warnings
         for box in boxes:
@@ -622,7 +764,10 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
                 s = scales.get(n, 1.0)
                 cx, cy = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2
                 foot = (cx - (cx - lo[0]) * s, cy - (cy - lo[1]) * s, cx + (hi[0] - cx) * s, cy + (hi[1] - cy) * s)
-                if overlaps((tw[0], tw[1], tw[2], tw[3]), foot):
+                # Inside the bounding box is fine where the outline leaves room (a corner
+                # beside a head): only a tower on the outline itself is in the model's way.
+                outline = plate_outline(f, n, (cx, cy), s) if overlaps(tuple(tw[:4]), foot) else None
+                if overlaps(tuple(tw[:4]), foot) and (outline is None or outline_hits(outline, tuple(tw[:4]))):
                     msg = (f"{name}: the prime tower {slicer.name} printed ({tw[0]:.0f}..{tw[2]:.0f} x "
                            f"{tw[1]:.0f}..{tw[3]:.0f}) overlaps the model's footprint "
                            f"({foot[0]:.0f}..{foot[2]:.0f} x {foot[1]:.0f}..{foot[3]:.0f})")
