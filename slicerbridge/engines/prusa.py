@@ -975,7 +975,7 @@ def mapping_text(mapping: dict) -> str:
 
 
 def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_it: bool, out: Path,
-                prefix: str = "") -> list:
+                prefix: str = "", suffix: str = "") -> list:
     """Write `src`'s file(s) for one Prusa printer, one per plate; returns its table rows."""
     printer = PRINTERS[printer_key]
     prof = load_profile(printer_key)
@@ -984,7 +984,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
     OUT = out / src.display
 
     multi = len(src.plates) > 1
-    names = [out_name(src.display, printer_key, prefix, f" - Plate {plate.number}" if multi else "")
+    names = [out_name(src.display, printer_key, prefix, f" - Plate {plate.number}" if multi else "", suffix)
              for plate in src.plates]
 
     # Every decision first: nothing is written for a model that would be refused,
@@ -1132,14 +1132,14 @@ def inspect(path: Path, keys: list[str]) -> list[str]:
 
 
 def convert(path: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
-            explicit: Optional[dict] = None) -> tuple[int, int]:
+            explicit: Optional[dict] = None, suffix: str = "") -> tuple[int, int]:
     """Write `name`'s files for each Prusa printer key into out/<name>/; returns (written, refused or failed)."""
     rows, refused = [], []
     for key in keys:
         # Read afresh for every printer: placing a plate moves the source's own build items.
         try:
             src = load_source(path.stem, name, path)
-            rows += convert_one(src, key, explicit, slice_it, out, prefix)
+            rows += convert_one(src, key, explicit, slice_it, out, prefix, suffix)
         except Refusal as e:
             print(f"\n  SKIP {name} {PRINTERS[key].label}\n!! {e}")
             refused.append((f"{name} {PRINTERS[key].label}", str(e)))

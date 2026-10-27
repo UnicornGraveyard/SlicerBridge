@@ -39,6 +39,9 @@ def test_names_windows_cant_hold_are_made_safe(project, tmp_path, capsys):
     assert main(["convert", str(project), "--name", "Dragon: Part 1?", "-p", "u1", "-o", str(out)]) == 0
     assert (out / "Dragon- Part 1-" / "Dragon- Part 1- - Snapmaker U1.3mf").exists()
     assert "isn't a file name Windows can open" in capsys.readouterr().out
+    assert main(["convert", str(project), "--name", "Cube", "-p", "u1", "-o", str(out), "--suffix", "A/B"]) == 0
+    assert (out / "Cube" / "Cube - Snapmaker U1 - A-B.3mf").exists()
+    assert "isn't a file name Windows can open" in capsys.readouterr().out
 
 
 def test_a_name_with_nothing_left_is_refused(project, tmp_path):

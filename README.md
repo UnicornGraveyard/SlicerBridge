@@ -113,6 +113,7 @@ slicerbridge inspect model.3mf                       # colors used, plates, fit 
 slicerbridge convert model.3mf                       # the popular printers, into out/<model>/
 slicerbridge convert "Dragon - Creality K2 Plus.3mf" --printers bambu   # retarget a file you already have
 slicerbridge convert model.3mf --printers all --slice --name "My Model" --prefix "My Shop - "
+slicerbridge convert model.3mf --name "My Model" --suffix "My Shop"   # My Model - Prusa XL - My Shop.3mf
 slicerbridge convert model.3mf --printers creality,qidi,u1
 slicerbridge printers                                # every printer, its key, engine and slicer
 slicerbridge verify "out/My Model" --source model.3mf --slice

@@ -436,7 +436,7 @@ def unhide(path: Path) -> None:
         os.chflags(path, flags & ~stat.UF_HIDDEN)
 
 
-def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "") -> Path:
+def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "") -> Path:
     """Write `slug`'s U1 file into out/<slug>/ and return it; `slug` is the model's display name."""
     if not src.exists():
         raise Refusal(f"no such file: {src}")
@@ -450,7 +450,7 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     application, client_version = template_stamp(has_support)
     bed = Bed.of(u1)
 
-    out_path = named_path(out, slug, "u1", prefix)
+    out_path = named_path(out, slug, "u1", prefix, suffix)
 
     # Every decision first: nothing is written for a model that would be refused,
     # and an older file SlicerBridge wrote for it doesn't get to stand in for this run.
@@ -652,7 +652,8 @@ def inspect(src: Path) -> list[str]:
     return lines
 
 
-def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False) -> tuple[int, int]:
+def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
+            suffix: str = "") -> tuple[int, int]:
     """Write `name`'s U1 file into out/<name>/; returns (written, refused or failed).
 
     `slice_it` is accepted for symmetry: slicing in Snapmaker Orca isn't wired up yet.
@@ -660,7 +661,7 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
     if slice_it:
         print(f"  note: --slice isn't available for the {U1_LABEL} yet; its file is audited, not sliced")
     try:
-        write(src, name, load_u1_profiles(), out, prefix)
+        write(src, name, load_u1_profiles(), out, prefix, suffix)
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
         return 0, 1

@@ -25,7 +25,7 @@ def test_a_profile_with_non_ascii_bytes_is_indexed(tmp_path):
 
 
 def test_one_printers_failure_leaves_the_rest_their_files(monkeypatch, tmp_path):
-    def write(m, key, slice_it, out, prefix=""):
+    def write(m, key, slice_it, out, prefix="", suffix=""):
         if key == "k2plus":
             raise RuntimeError("the slicer hung")
         return True

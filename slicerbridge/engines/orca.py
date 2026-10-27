@@ -892,10 +892,10 @@ def load_model(src: Path, slug: str) -> Model:
     return Model(slug, src, used, plates, ordered, mapping, src_cfg)
 
 
-def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "") -> bool:
+def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffix: str = "") -> bool:
     """Convert one model for one printer; True when the file passed and landed in `out`."""
     printer = PRINTERS[key]
-    final = out_path(out, m.slug, key, prefix)
+    final = out_path(out, m.slug, key, prefix, suffix)
     if len(m.used) > printer.tools:
         by_id = {int(f["id"]): f for f in parse_filaments(m.src)}
         lines = "\n".join(f"       {s:>2}  {by_id[s]['type']:8} {by_id[s]['color']}" for s in m.used)
@@ -1048,26 +1048,27 @@ def inspect(src: Path, keys: list[str]) -> list[str]:
     return lines
 
 
-def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False) -> tuple[int, int]:
+def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
+            suffix: str = "") -> tuple[int, int]:
     """Write `name`'s file for each printer key into out/<name>/; returns (written, refused or failed)."""
     try:
         m = load_model(src, name)
     except Refusal as e:  # a refused model writes nothing, and takes back what it wrote before
         print(f"  SKIP {name}\n!! {e}")
         for k in keys:
-            withdraw(out_path(out, name, k, prefix), "the model is refused")
+            withdraw(out_path(out, name, k, prefix, suffix), "the model is refused")
         return 0, len(keys)
     made = failed = 0
     for k in keys:
         try:
-            ok = write(m, k, slice_it, out, prefix)
+            ok = write(m, k, slice_it, out, prefix, suffix)
         except Refusal as e:
             print(f"  SKIP {name} {PRINTERS[k].label}\n!! {e}")
-            withdraw(out_path(out, name, k, prefix), "it was refused")
+            withdraw(out_path(out, name, k, prefix, suffix), "it was refused")
             ok = False
         except Exception as e:  # a bug or a slicer gone wrong: this printer fails, the rest still get theirs
             print(f"  FAIL {name} {PRINTERS[k].label}\n!! {type(e).__name__}: {e}")
-            withdraw(out_path(out, name, k, prefix), "it failed")
+            withdraw(out_path(out, name, k, prefix, suffix), "it failed")
             ok = False
         made, failed = made + ok, failed + (not ok)
     del m
