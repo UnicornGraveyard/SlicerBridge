@@ -34,8 +34,14 @@ the build). The bed type is the one the slicer's app picks for that printer; Bam
 
 ## Your settings
 
-Print settings the source project changed from its preset (layer height, walls, infill, supports and the like) are
-carried over where the target has the same setting. Then the target's slicer reads the whole file back: a carried
+The print settings that shape the print (layer height, walls and shells, infill, surface patterns, seams, supports
+and rafts, brim and skirt, ironing, fuzzy skin) are carried over where the target has the same setting, and so is
+anything else the source project marks as changed from its preset, speeds and accelerations included. Bambu Studio
+marks a setting changed against the preset's system parent, so a detached or imported preset marks nothing: the
+settings that shape the print are carried whatever it marks ([carry.py](../slicerbridge/carry.py)). Speeds,
+accelerations and line widths are tuned to the source's printer, and stay the target's unless marked. Prusa files
+take what PrusaSlicer has a setting for, and the Snapmaker U1 the same as the others. Then the target's slicer
+reads the whole file back: a carried
 value it doesn't take keeps the printer's own, and the output says so. A value the printer owns (its prime
 tower, purge volumes, machine limits) is never carried.
 

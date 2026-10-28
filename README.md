@@ -20,7 +20,8 @@ OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every
 - **keeps the colors where you painted them.** The filaments a model actually uses are kept in order, and every
   painted triangle is re-encoded to match.
 - **carries that printer's own settings**, written by its own slicer, and that printer's filament presets. Your
-  print settings (layer height, walls, infill, supports) come along where the printer has the same setting.
+  print settings (layer height, walls, infill, supports, brim, ironing and the rest that shape the print) come
+  along where the printer has the same setting, whether or not your project marks them as changed.
 - **keeps its size.** Nothing is ever scaled. A model bigger than a bed gets a warning with the scale that fits.
 - **is checked before it's written**: colors, paint, plates, size and settings, and optionally sliced in that
   printer's slicer to prove automatic color changes and a prime tower clear of the model. A file that fails a

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Your print settings reach every file, not the printer's defaults. Settings were carried only if the project
+  marked them as changed, and Bambu Studio marks nothing for a process preset with no system parent (detached,
+  imported, or from a MakerWorld profile), so supports, brim, ironing and the like came out as each printer's
+  default. Now every setting that shapes the print (layers, walls and shells, infill, surface patterns, seams,
+  supports and rafts, brim and skirt, ironing, fuzzy skin) is carried whatever the project marks; speeds,
+  accelerations and line widths still only when marked. The Snapmaker U1 file carried none of them, only the
+  template's: it carries them now, and prints supports whenever the source does.
 - Four more printers that change nozzles or toolheads: the Bambu Lab X2D and H2D Pro (two nozzles, written by
   Bambu Studio), and the Flashforge Creator 5 Pro and WonderMaker ZR Ultra S (four toolheads, written by
   OrcaSlicer). 34 printers in all. On Windows, OrcaSlicer 2.4.2's command line crashes opening any

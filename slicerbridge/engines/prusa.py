@@ -45,10 +45,11 @@ import lxml.etree as ET
 
 from .._vendor.panda2prusa import ns
 from .._vendor.panda2prusa.convert import describe, used_filaments
-from .._vendor.panda2prusa.settings import Warnings, translate
+from .._vendor.panda2prusa.settings import ENUMS, PATTERNS, RENAMED, Warnings, translate
 from .._vendor.panda2prusa.transform import Transform
 from .._vendor.panda2prusa.writer import write_prusa_3mf
 
+from ..carry import marked_changed, print_keys
 from ..errors import Refusal
 from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name, run_slicer
 
@@ -63,15 +64,16 @@ USER_DATADIR = {"darwin": Path("~/Library/Application Support/PrusaSlicer"),
 
 FILAMENT_TYPES = {"PLA"}  # Bambu filament_type values the filament preset stands for
 
-# Print settings carried over from the Bambu project onto the Prusa print profile,
-# on top of whatever the project marks as changed from its system preset. Everything
-# goes through Panda2Prusa's own translator; what it can't translate is reported.
-PRINT_KEYS = (
-    "layer_height", "wall_loops", "top_shell_layers", "bottom_shell_layers",
-    "sparse_infill_density", "sparse_infill_pattern", "seam_position",
-    "enable_support", "support_type", "support_style", "support_threshold_angle",
-    "support_on_build_plate_only",
-)
+# Print settings carried over from the Bambu project onto the Prusa print profile
+# (carry.py): every one Panda2Prusa's translator has a PrusaSlicer setting for, and
+# whatever the project marks as changed from its preset, which is reported when it
+# can't be translated.
+TRANSLATED_APART = {"support_type", "support_style", "ironing_type", "brim_type",
+                    "support_bottom_z_distance", "seam_slope_start_height"}
+
+
+def translatable(key: str) -> bool:
+    return key in RENAMED or key in PATTERNS or key in ENUMS or key in TRANSLATED_APART
 
 # Bambu part subtypes -> PrusaSlicer volume types (the 3MF names on both sides).
 VOLUME_TYPES = {
@@ -297,8 +299,8 @@ def load_source(slug: str, display: str, path: Path) -> Source:
                         if p[i] > hi[i]:
                             hi[i] = p[i]
 
-    diff = ps.get("different_settings_to_system") or [""]
-    keys = list(PRINT_KEYS) + [k for k in str(diff[0]).split(";") if k and k not in PRINT_KEYS]
+    marked = marked_changed(ps)
+    keys = [k for k in print_keys(ps) if k in marked or translatable(k)]
     print_settings = {}
     for k in keys:
         v = ps.get(k)

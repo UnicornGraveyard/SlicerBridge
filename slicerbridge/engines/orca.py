@@ -15,8 +15,9 @@ OrcaSlicer, and read the Bambu .3mf format:
   each type (templates.py); a file's settings are those, one filament column
   per color, the bed type the app would pick, and the source's own flush volumes
   for its colors. Then the print settings the designer chose in their slicer
-  (supports, infill, walls, layer height -- everything the source marks as
-  changed) are carried over where the target has the same setting, and the
+  (supports, infill, walls, layer height and the rest that shape the print,
+  and everything the source marks as changed: carry.py) are carried over where
+  the target has the same setting, and the
   slicer reads the whole result back: a value it doesn't take keeps the
   printer's, and is named in the output.
 - Size: never changed. Each plate moves onto its own plate of the printer's bed
@@ -51,6 +52,7 @@ from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
 from .. import templates as templates_build
+from ..carry import carry_print_settings
 from ..checks import orca as verify
 from ..errors import Refusal
 from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
@@ -70,16 +72,6 @@ BAMBU_LEFTOVERS = verify.BAMBU_LEFTOVERS
 PLATE_STRIDE = 1.2
 EPS = 1e-4                 # mm of tolerance on bed edges
 
-# Print settings carried from the Bambu project whatever it marks as changed --
-# the ones that shape the print -- on top of everything it does mark as changed.
-CARRY = ("layer_height", "wall_loops", "top_shell_layers", "bottom_shell_layers",
-         "sparse_infill_density", "sparse_infill_pattern", "seam_position",
-         "enable_support", "support_type", "support_style", "support_threshold_angle",
-         "support_on_build_plate_only")
-# Never carried: the printer's own business (its prime tower, purging, the
-# timelapse moves a Bambu camera wants), and filament numbers, handled apart.
-NEVER_CARRY = re.compile(r"^(prime_tower_|wipe_tower_|flush_volumes_|flush_multiplier$|timelapse_|"
-                         r"enable_prime_tower$|.*_filament$)")
 # Settings OrcaSlicer fills in or keeps per plate when it saves: not ours to compare.
 READ_BACK_IGNORED = {"upward_compatible_machine", "wipe_tower_x", "wipe_tower_y"}
 # Preset values a slicer itself can't slice: OrcaSlicer 2.4.2's seam placer loops forever
@@ -565,24 +557,6 @@ def flush_matrix(src_cfg: dict, used: list[int], base: dict) -> list[str]:
                 for i in used for j in used]
     off = next((v for v in base.get("flush_volumes_matrix", []) if v != "0"), "280")
     return [off if i != j else "0" for i in range(k) for j in range(k)]
-
-
-def carry_print_settings(src_cfg: dict, base: dict) -> tuple[dict, dict]:
-    """({key: the source's value} to carry, {key: why not}) for the print settings the designer chose."""
-    diff = src_cfg.get("different_settings_to_system") or [""]
-    changed = {k for k in str(diff[0]).split(";") if k}
-    carried, skipped = {}, {}
-    for k in sorted(set(CARRY) | changed):
-        if NEVER_CARRY.match(k) or k not in src_cfg:
-            continue
-        v = src_cfg[k]
-        if k not in base:
-            skipped[k] = "not an OrcaSlicer setting"
-        elif type(v) is not type(base[k]) or (isinstance(v, list) and len(v) != len(base[k])):
-            skipped[k] = f"Bambu Studio keeps it per nozzle ({v})"
-        elif v != base[k]:
-            carried[k] = v
-    return carried, skipped
 
 
 def absolute_line_widths(s: dict) -> set:
