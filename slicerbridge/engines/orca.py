@@ -1020,7 +1020,7 @@ def inspect(src: Path, keys: list[str]) -> list[str]:
     beds = {}
     for k in keys:
         try:
-            beds[k] = Bed.of(templates_build.load(k)[1]["PLA"])
+            beds[k] = Bed.of(templates_build.load(k, install=False)[1]["PLA"])  # inspecting installs nothing
         except Refusal as e:
             lines.append(f"    {PRINTERS[k].label}: no template ({str(e).splitlines()[0]})")
     for p in plates:

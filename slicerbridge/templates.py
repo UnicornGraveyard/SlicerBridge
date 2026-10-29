@@ -392,17 +392,19 @@ def build(key: str) -> list[str]:
     return []
 
 
-def load(key: str) -> tuple[dict, dict]:
+def load(key: str, install: bool = True) -> tuple[dict, dict]:
     """(meta, {filament type: project settings}) for one printer.
 
     Built first if missing, or rebuilt if its slicer or presets have changed
     since: settings from another slicer version, or another preset, would
-    disagree with the stamp and the slice check.
+    disagree with the stamp and the slice check. A missing slicer is installed
+    first (printers.ensure_installed) unless `install` is False.
     """
     dest = TEMPLATES / key
     p = PRINTERS[key]
     slicer = SLICERS[p.slicer]
-    ensure_installed(slicer)
+    if install:
+        ensure_installed(slicer)
     if not slicer.installed:
         raise Refusal(not_found(slicer))
     meta = json.loads((dest / "meta.json").read_text(encoding="utf-8")) if (dest / "meta.json").exists() else {}

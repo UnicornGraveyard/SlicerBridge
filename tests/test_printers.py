@@ -47,7 +47,8 @@ def _missing_orca(monkeypatch, tmp_path, env=None):
     calls = []
     monkeypatch.setattr(P.sys, "platform", "darwin")
     monkeypatch.setattr(P.shutil, "which", lambda name: "/opt/homebrew/bin/brew")
-    monkeypatch.setattr(P.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(P.subprocess, "run",
+                        lambda cmd, **kw: calls.append(cmd) or P.subprocess.CompletedProcess(cmd, 0, "", ""))
     monkeypatch.setattr(P, "_TRIED_CASKS", set())
     if env:
         monkeypatch.setenv("SLICERBRIDGE_ORCASLICER", env)

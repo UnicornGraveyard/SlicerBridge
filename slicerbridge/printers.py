@@ -174,7 +174,12 @@ def ensure_installed(slicer: Slicer) -> None:
     if not brew:
         return
     print(f"  {slicer.name} isn't installed: brew install --cask {slicer.cask}", file=sys.stderr)
-    subprocess.run([brew, "install", "--cask", slicer.cask], stdout=sys.stderr, check=False)
+    # Captured, not handed sys.stderr: the MCP server swaps it for a buffer with no file
+    # descriptor, and its stdin is the MCP channel, which brew must never read.
+    r = subprocess.run([brew, "install", "--cask", slicer.cask], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+    if r.stdout or r.stderr:
+        print(r.stdout + r.stderr, end="", file=sys.stderr)
 
 
 def not_found(slicer: Slicer) -> str:

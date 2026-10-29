@@ -120,3 +120,15 @@ def test_a_value_orcaslicer_only_respaces_is_written_its_way(monkeypatch):
     monkeypatch.setattr(orca, "read_back", lambda key, settings: (dict(back), []))
     settings, dropped = orca.settle("zrultras", written, {}, {})
     assert settings["thumbnails"] == "48x48/PNG, 300x300/PNG" and dropped == {}
+
+
+def test_the_refused_setting_is_found_in_all_of_prusaslicers_log():
+    log = ("Error: The composite configation is not valid: Value out of range: raft_first_layer_expansion\n"
+           "Loading of a model file failed.\n")  # the last line names nothing
+    check = prusa.Check("9", "PrusaSlicer --info loads it", False, "exit 1  Loading of a model file failed.", log)
+    assert prusa.refused_key([check], {"raft_first_layer_expansion"}) == "raft_first_layer_expansion"
+
+
+def test_an_unmarked_value_prusaslicer_has_nothing_for_is_left_out_quietly():
+    assert prusa.translates("sparse_infill_density", "35%")
+    assert not prusa.translates("support_base_pattern", "default")

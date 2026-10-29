@@ -75,6 +75,19 @@ TRANSLATED_APART = {"support_type", "support_style", "ironing_type", "brim_type"
 def translatable(key: str) -> bool:
     return key in RENAMED or key in PATTERNS or key in ENUMS or key in TRANSLATED_APART
 
+
+def translates(key: str, value: str) -> bool:
+    """Whether an unmarked setting's value becomes a PrusaSlicer one, or at least says why not.
+
+    A value with nothing to become (Bambu's support_base_pattern "default", a scarf
+    start height in mm) is left out, not reported: the designer didn't mark it.
+    """
+    w = Warnings()
+    try:
+        return bool(translate({key: value}, "project", w, True)) or not w.lines()
+    except ValueError:  # a number translate() can't read, e.g. support_bottom_z_distance "nil"
+        return False
+
 # Bambu part subtypes -> PrusaSlicer volume types (the 3MF names on both sides).
 VOLUME_TYPES = {
     "normal_part": "ModelPart",
@@ -300,14 +313,18 @@ def load_source(slug: str, display: str, path: Path) -> Source:
                             hi[i] = p[i]
 
     marked = marked_changed(ps)
-    keys = [k for k in print_keys(ps) if k in marked or translatable(k)]
     print_settings = {}
-    for k in keys:
+    for k in print_keys(ps):
+        if k not in marked and not translatable(k):
+            continue
         v = ps.get(k)
         if isinstance(v, list):
             v = v[0] if v else None
-        if v is not None:
-            print_settings[k] = str(v)
+        if v is None:
+            continue
+        v = str(v)
+        if k in marked or translates(k, v):
+            print_settings[k] = v
 
     return Source(slug, display, path, project, palette, types, used,
                   [plates[n] for n in numbers], print_settings)
@@ -522,10 +539,11 @@ def refused_key(checks: list, carried: set) -> Optional[str]:
     """The carried setting PrusaSlicer refused to load, if that is why check 9 failed."""
     for c in checks:
         if c.n == "9" and not c.ok:
-            m = REFUSED_VALUE.search(c.detail)
-            k = m and (m.group(1) or m.group(2))
-            if k in carried:
-                return k
+            log = c.value if isinstance(c.value, str) else c.detail
+            for m in REFUSED_VALUE.finditer(log):
+                k = m.group(1) or m.group(2)
+                if k in carried:
+                    return k
     return None
 
 
@@ -945,7 +963,8 @@ def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: S
     err = (r.stderr.strip().splitlines() or [""])[-1][:120]
     return Check("9", "PrusaSlicer --info loads it", ok,
                  f"exit {r.returncode}, facets {facets:,} (want {model_tris:,}), manifold {','.join(manifold)}, "
-                 f"reloaded {nt} tools, colors {'ok' if colors_ok else 'WRONG'}" + (f"  {err}" if r.returncode else ""))
+                 f"reloaded {nt} tools, colors {'ok' if colors_ok else 'WRONG'}" + (f"  {err}" if r.returncode else ""),
+                 r.stderr)  # all of it: refused_key looks for the setting PrusaSlicer names
 
 
 def slice_check(out: Path, ps: str) -> Check:

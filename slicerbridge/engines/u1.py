@@ -443,14 +443,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         raise Refusal(f"no such file: {src}")
 
     # ---- template: with supports if the source prints them ---------------
-    # bl2u1 looks for enable_support among the settings the source marks as changed;
-    # a source whose preset has supports on, or no system parent to differ from,
-    # marks nothing, so its own value counts too.
+    # By the source's own value: bl2u1 looked for enable_support among the settings
+    # it marks as changed, which a preset with no system parent never marks, and
+    # which turning supports off marks too.
     with zipfile.ZipFile(src) as z:
         orig = json.loads(z.read("Metadata/project_settings.config").decode())
-    diff = orig.get("different_settings_to_system", [])
-    has_support = (str(orig.get("enable_support", "0")) == "1"
-                   or any(isinstance(s, str) and "enable_support" in s for s in diff))
+    has_support = str(orig.get("enable_support", "0")) == "1"
     u1 = load_template(has_support)
     application, client_version = template_stamp(has_support)
     bed = Bed.of(u1)
