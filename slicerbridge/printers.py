@@ -146,6 +146,13 @@ SLICERS = {
         mac=("/Applications/PrusaSlicer.app", "/Applications/Original Prusa Drivers/PrusaSlicer.app",
              "~/Applications/PrusaSlicer.app"),
         windows=(r"%ProgramFiles%\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",)))),
+    # The U1's files come from templates, not a slicer: Snapmaker Orca only slices them
+    # (--slice). Names from its source: the bundle and binary (build_release_macos.sh),
+    # the Windows folder (CPACK_PACKAGE_INSTALL_DIRECTORY) and exe (src/CMakeLists.txt).
+    "snapmaker": Slicer("Snapmaker Orca", _app("SLICERBRIDGE_SNAPMAKER_ORCA", *_installs(
+        mac=("/Applications/Snapmaker Orca.app", "~/Applications/Snapmaker Orca.app"),
+        windows=(r"%ProgramFiles%\Snapmaker_Orca\snapmaker-orca.exe",))),
+                         exe="Snapmaker_Orca", cask="snapmaker-orca"),
 }
 
 

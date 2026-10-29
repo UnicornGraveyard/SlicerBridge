@@ -33,7 +33,7 @@ from the presets bundled with your install, the first time you convert for it (o
 | Bambu Lab | Bambu Studio | `/Applications/BambuStudio.app` | `C:\Program Files\Bambu Studio\bambu-studio.exe` | `SLICERBRIDGE_BAMBU_STUDIO` |
 | Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker | OrcaSlicer **2.4.2** | `/Applications/OrcaSlicer.app` | `C:\Program Files\OrcaSlicer\orca-slicer.exe` | `SLICERBRIDGE_ORCASLICER` |
 | Prusa | PrusaSlicer | `/Applications/PrusaSlicer.app`, `/Applications/Original Prusa Drivers/PrusaSlicer.app` | `C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe` | `SLICERBRIDGE_PRUSASLICER` |
-| Snapmaker U1 | none | built in | built in | |
+| Snapmaker U1 | none (Snapmaker Orca for `--slice`) | built in (`/Applications/Snapmaker Orca.app`) | built in (`C:\Program Files\Snapmaker_Orca\snapmaker-orca.exe`) | `SLICERBRIDGE_SNAPMAKER_ORCA` |
 
 On Windows, point `SLICERBRIDGE_PRUSASLICER` at `prusa-slicer-console.exe`, not `prusa-slicer.exe`: the window
 version prints nothing for SlicerBridge to read.

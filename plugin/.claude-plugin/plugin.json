@@ -44,6 +44,12 @@
       "description": "Where PrusaSlicer, which builds the Prusa printer profiles is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
       "default": ""
     },
+    "snapmaker_orca": {
+      "type": "string",
+      "title": "Snapmaker Orca location",
+      "description": "Where Snapmaker Orca, which slices the Snapmaker U1 file is installed: the .app on macOS, or its executable. Leave empty to look in /Applications.",
+      "default": ""
+    },
     "creality_print": {
       "type": "string",
       "title": "Creality Print location",

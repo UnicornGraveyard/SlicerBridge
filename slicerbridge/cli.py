@@ -157,7 +157,7 @@ def cmd_printers(a: argparse.Namespace) -> int:
     for k in keys:
         engine = engine_of(k)
         slicer = (SLICERS[PRINTERS[k].slicer].name if engine == "orca" else
-                  SLICERS["prusa"].name if engine == "prusa" else "Snapmaker Orca")
+                  SLICERS["prusa"].name if engine == "prusa" else SLICERS["snapmaker"].name)
         brand = BRAND_SLICERS.get(vendor_of(k))
         sets = [n for n, members in SETS.items() if k in members]
         print(f"  {k:11} {label_of(k):26} {engine:6} {slicer:13} up to {tools_of(k):>2} colors"
@@ -187,7 +187,13 @@ def cmd_verify(a: argparse.Namespace) -> int:
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif engine == "u1":
-            (info, problems), warnings = u1_check.audit(f, src), []
+            try:
+                (info, problems), warnings = u1_check.audit(f, src), []
+                if a.slice and not problems:
+                    si, sp, sw = _engine("u1").slice_check(f)
+                    info, problems, warnings = info + si, problems + sp, warnings + sw
+            except Exception as e:  # one file's failure doesn't stop the others being checked
+                info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif engine == "prusa":
             info, problems, warnings = [], [], ["Prusa files are checked while they're written: convert again to re-check"]
         else:

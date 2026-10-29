@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/UnicornGraveyard/SlicerBridge",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "slicerbridge",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -40,6 +40,12 @@
         {
           "name": "SLICERBRIDGE_PRUSASLICER",
           "description": "Where PrusaSlicer, which builds the Prusa printer profiles is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SLICERBRIDGE_SNAPMAKER_ORCA",
+          "description": "Where Snapmaker Orca, which slices the Snapmaker U1 file is installed (default: /Applications)",
           "isRequired": false,
           "format": "string"
         },
