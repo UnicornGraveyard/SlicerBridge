@@ -8,7 +8,9 @@
   default. Now every setting that shapes the print (layers, walls and shells, infill, surface patterns, seams,
   supports and rafts, brim and skirt, ironing, fuzzy skin) is carried whatever the project marks; speeds,
   accelerations and line widths still only when marked. The Snapmaker U1 file carried none of them, only the
-  template's: it carries them now, and prints supports whenever the source does.
+  template's: it carries them now, and prints supports whenever the source does. A carried value PrusaSlicer
+  won't load (Bambu's -1 for "auto" raft expansion, say) keeps the Prusa profile's, and the output says so,
+  instead of failing the file.
 - Four more printers that change nozzles or toolheads: the Bambu Lab X2D and H2D Pro (two nozzles, written by
   Bambu Studio), and the Flashforge Creator 5 Pro and WonderMaker ZR Ultra S (four toolheads, written by
   OrcaSlicer). 34 printers in all. On Windows, OrcaSlicer 2.4.2's command line crashes opening any
