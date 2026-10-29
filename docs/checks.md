@@ -29,7 +29,8 @@ With `--slice` (or `slicerbridge verify --slice`):
 13. The printer's slicer slices every plate; every color change is a tool change the printer makes itself (no
     `PAUSE`, no `M600`); the prime tower it actually printed stays clear of the model. A plate bigger than the
     bed is sliced as a scaled copy, the way a downloader would print it. A slice still running after 20 minutes
-    is a failure, and a slicer crash gets one more try.
+    is a failure, and a slicer crash gets one more try. The result says the slicer's time and grams, and what
+    share of the filament laid goes into the prime tower.
 
 And whatever the source:
 
@@ -54,6 +55,10 @@ And whatever the source:
     brim, spacing and speed are required on the file's own ribs; where that wouldn't fit either, only the slower
     tower, with a warning to slice it in Snapmaker Orca and look. The minimums are written
     out in the check, not taken from the engine.
+
+With `--slice`, check 13 as above, in Snapmaker Orca. Its command line refuses every project as newer than itself,
+its own included, so it's given `--allow-newer-file`. Without Snapmaker Orca the file is still written, unsliced,
+with a warning.
 
 ## prusa engine (Prusa printers)
 

@@ -27,7 +27,8 @@ the template's ribs, if the strip holds that; else TALL_TOWER_TIGHT, and a
 warning to slice it in Snapmaker Orca and look. The same steps as every other
 printer's (tall.py).
 
-Every file passes checks/u1.py's audit before it is written.
+Every file passes checks/u1.py's audit before it is written, and with --slice
+Snapmaker Orca slices it (checks/orca.py's check 13) or it isn't written.
 """
 from __future__ import annotations
 
@@ -52,9 +53,9 @@ from .._vendor.panda2prusa.transform import Transform
 
 from .. import tall
 from ..carry import carry_print_settings
-from ..checks import u1 as u1check
+from ..checks import orca as orca_check, u1 as u1check
 from ..errors import Refusal
-from ..printers import LEGACY_STAMPS, STAMP, U1_LABEL, out_path as named_path
+from ..printers import LEGACY_STAMPS, SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "u1"  # bl2u1's U1 templates (GPLv3)
 TARGET_FILAMENTS = 4
@@ -140,7 +141,8 @@ def template_stamp(has_support: bool) -> tuple[str, str]:
 
     Snapmaker Orca's CLI can't confirm this either way: its version check refuses
     every file, its own 2.4.0 projects included ("File Version 2.4.0.0 not
-    supported by current cli version 01.10.01.50").
+    supported by current cli version 01.10.01.50"), so --slice skips it
+    (--allow-newer-file).
     """
     with zipfile.ZipFile(template_path(has_support)) as z:
         model = z.read(ROOT_MODEL).decode()
@@ -488,8 +490,23 @@ def unhide(path: Path) -> None:
         os.chflags(path, flags & ~stat.UF_HIDDEN)
 
 
-def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "") -> Path:
-    """Write `slug`'s U1 file into out/<slug>/ and return it; `slug` is the model's display name."""
+def slice_check(f: Path) -> tuple[list[str], list[str], list[str]]:
+    """(info, problems, warnings) from slicing `f` in Snapmaker Orca: checks/orca.py's check 13.
+
+    On a Mac a missing Snapmaker Orca is installed with Homebrew first; without one the
+    file is still checked, just not sliced, and the warning says how to get it.
+    """
+    slicer = SLICERS["snapmaker"]
+    ensure_installed(slicer)
+    if not slicer.installed:
+        return [], [], [f"not sliced: {not_found(slicer)}"]
+    return orca_check.slice_check(f, "u1")
+
+
+def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "",
+          slice_it: bool = False) -> Path:
+    """Write `slug`'s U1 file into out/<slug>/ and return it; `slug` is the model's display name.
+    `slice_it`: slice it in Snapmaker Orca first, and refuse it if it won't slice."""
     if not src.exists():
         raise Refusal(f"no such file: {src}")
 
@@ -662,6 +679,9 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
 
     # The checks, before anything lands in the output folder.
     info, problems = u1check.audit(tmp, src)
+    sliced, slice_warnings = [], []
+    if slice_it and not problems:
+        sliced, problems, slice_warnings = slice_check(tmp)
     if problems:
         tmp.unlink()
         if out_path.exists() and ours(out_path):
@@ -686,7 +706,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     slots = ",".join(map(str, used))
     news = ",".join(str(mapping[s]) for s in used)
     how = "1:1" if identity else f"{len(recoded):,} paint strings re-encoded"
-    print(f"  ok  {slug:12} slots [{slots}] -> [{news}] ({how}) -> {out_path.name}  ({mb:.0f} MB)")
+    print(f"  ok  {slug:12} slots [{slots}] -> [{news}] ({how}) -> {out_path.name}  ({mb:.0f} MB)"
+          + ("  sliced" if sliced else ""))
+    for line in sliced:
+        print(f"       {line.split(': ', 1)[-1]}")
+    for w in slice_warnings:
+        print(f"       ⚠ {w}")
     if tower_extra:
         step = {id(TALL_TOWER): 0, id(TALL_TOWER_STOCK_RIBS): 1}.get(id(tower_extra), -1)
         print(f"       {tall.say(tall.STEPS['orca'][step][0], tallest, tower_extra)}")
@@ -697,7 +722,8 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
               + ("" if pl.fits else f"  ⚠ bigger than the bed: centered at full size, "
                  f"fits at {math.floor(pl.max_scale * 1000) / 10:g}% or less")
               + (f", prime tower at {pl.tower[0]:.0f},{pl.tower[1]:.0f}" if pl.tower else "")
-              + ("  ⚠ tight for the prime tower -- slice it in Snapmaker Orca and look" if pl.tight and pl.fits else ""))
+              + ("  ⚠ tight for the prime tower -- slice it in Snapmaker Orca and look"
+                 if pl.tight and pl.fits and not sliced else ""))
     return out_path
 
 
@@ -729,13 +755,9 @@ def inspect(src: Path) -> list[str]:
 def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
             suffix: str = "") -> tuple[int, int]:
     """Write `name`'s U1 file into out/<name>/; returns (written, refused or failed).
-
-    `slice_it` is accepted for symmetry: slicing in Snapmaker Orca isn't wired up yet.
-    """
-    if slice_it:
-        print(f"  note: --slice isn't available for the {U1_LABEL} yet; its file is audited, not sliced")
+    `slice_it`: slice it in Snapmaker Orca first."""
     try:
-        write(src, name, load_u1_profiles(), out, prefix, suffix)
+        write(src, name, load_u1_profiles(), out, prefix, suffix, slice_it)
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
         return 0, 1

@@ -36,7 +36,9 @@ With --slice, also:
 
  13. OrcaSlicer slices every plate; each multicolor plate changes filament with
      tool changes the printer makes itself (no PAUSE or M600); the prime tower
-     OrcaSlicer actually printed stays clear of the model's footprint.
+     OrcaSlicer actually printed stays clear of the model's footprint. It says
+     what the slicer estimates (time, grams) and how much of the filament laid
+     goes into the prime tower. The U1's file gets the same in Snapmaker Orca.
 
 And whatever the source:
 
@@ -64,7 +66,7 @@ from collections import Counter
 from pathlib import Path
 
 from .. import templates as templates_build
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, Slicer, run_slicer
+from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, run_slicer
 from . import u1
 
 
@@ -685,10 +687,16 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
 
 AXIS = re.compile(r"\b([XYE])(-?[\d.]+)")
 TOOL = re.compile(r"^T(\d+)\b")
+# What the slicer estimates, in its own words: OrcaSlicer and its forks ("; estimated printing
+# time (normal mode) = 5h 3m", "; total filament used [g] = 412.3"), Bambu Studio ("; total
+# estimated time: 5h 3m", "; total filament weight [g] : 412.3").
+PRINT_TIME = re.compile(r"^; (?:estimated printing time \(normal mode\) =|.*\btotal estimated time:)\s*([^;]+)")
+GRAMS = re.compile(r"^; total filament (?:used \[g\] =|weight \[g\] :)\s*([\d.]+)")
 
 
 def gcode_facts(path: Path) -> dict:
-    """Tool changes, manual-change commands and the prime tower's printed extent in one plate's G-code.
+    """Tool changes, manual-change commands, the prime tower's printed extent and its share of
+    the filament laid, and the slicer's time and grams, in one plate's G-code.
 
     The tower's extent is where filament was laid down along a move inside
     ;TYPE:Prime tower -- not the travel to a purge chute in the same block, nor
@@ -698,8 +706,15 @@ def gcode_facts(path: Path) -> dict:
     tools, manual = Counter(), Counter()
     tower = [math.inf, math.inf, -math.inf, -math.inf]
     in_tower, relative, x, y, e = False, False, 0.0, 0.0, 0.0
+    laid_mm = tower_mm = 0.0
+    time = grams = None
     with open(path, encoding="utf-8", errors="replace") as g:
         for line in g:
+            if line.startswith(";"):
+                found = PRINT_TIME.match(line)
+                time = found.group(1).strip() if found else time
+                found = GRAMS.match(line)
+                grams = float(found.group(1)) if found else grams
             if line.startswith(";TYPE:") or line.startswith("; FEATURE:"):  # OrcaSlicer, Bambu Studio
                 in_tower = line.split(":", 1)[1].strip().lower() in ("prime tower", "wipe tower")
                 continue
@@ -713,6 +728,10 @@ def gcode_facts(path: Path) -> dict:
                 axes = {a: float(v) for a, v in AXIS.findall(code)}
                 laid = ("E" in axes and ("X" in axes or "Y" in axes)
                         and (axes["E"] > 0 if relative else axes["E"] > e))
+                if laid:
+                    mm = axes["E"] if relative else axes["E"] - e
+                    laid_mm += mm
+                    tower_mm += mm if in_tower else 0.0
                 if "E" in axes and not relative:
                     e = axes["E"]
                 if laid and in_tower:
@@ -729,7 +748,8 @@ def gcode_facts(path: Path) -> dict:
                 tools[int(word[1:])] += 1
             elif word in templates_build.MANUAL_CHANGE:
                 manual[word] += 1
-    return {"tools": tools, "manual": manual, "tower": tower if tower[0] != math.inf else None}
+    return {"tools": tools, "manual": manual, "tower": tower if tower[0] != math.inf else None,
+            "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams}
 
 
 def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict:
@@ -815,19 +835,21 @@ def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict
 
 def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[str], list[str], list[str]]:
     """Check 13: (info, problems, warnings) from slicing every plate in the printer's
-    slicer, or in `slicer` (brandcheck.py: the brand's own fork)."""
-    printer = PRINTERS[key]
-    slicer = slicer or SLICERS[printer.slicer]
+    slicer, or in `slicer` (brandcheck.py: the brand's own fork). Key "u1": Snapmaker Orca."""
+    label = U1_LABEL if key == "u1" else PRINTERS[key].label
+    slicer = slicer or SLICERS["snapmaker" if key == "u1" else PRINTERS[key].slicer]
     info, problems, warnings = [], [], []
     with zipfile.ZipFile(f) as z:
         cfg = json.loads(z.read("Metadata/project_settings.config").decode())
-        _i, _p, _w, boxes = on_plates(z, cfg, printer.label)
+        _i, _p, _w, boxes = on_plates(z, cfg, label)
         file_stamp = u1.stamp(z)[0]
     k = len(cfg.get("filament_colour", []))
     # OrcaSlicer 2.4.2 stamps its projects BambuStudio-02.06.00.51 and then its CLI
     # refuses them as newer than itself (2.4.2): its own exports need the override.
-    # Any other slicer gets the file as a downloader would, and a refusal is noted.
-    newer = slicer == SLICERS["orca"]
+    # Snapmaker Orca's refuses every project, its own included: it holds a file's 2.x
+    # to its SLIC3R_VERSION, 01.10.01.50 (src/Snapmaker_Orca.cpp). Any other slicer
+    # gets the file as a downloader would, and a refusal is noted.
+    newer = slicer in (SLICERS["orca"], SLICERS["snapmaker"])
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def run_on(crowded: bool) -> tuple[subprocess.CompletedProcess, dict]:
             target = Path(tmp) / "scaled.3mf"
@@ -903,10 +925,13 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
                 problems.append(f"{name}: {slicer.name} wrote no G-code")
                 continue
             facts = gcode_facts(gcode)
-            info.append(f"sliced    : {name} {gcode.stat().st_size / 1e6:.0f} MB G-code, tool changes "
-                        f"{dict(sorted(facts['tools'].items()))}"
+            info.append(f"sliced    : {name} {gcode.stat().st_size / 1e6:.0f} MB G-code"
+                        + (f", {facts['time']}" if facts["time"] else "")
+                        + (f", {facts['grams']:.0f} g" if facts["grams"] is not None else "")
+                        + f", tool changes {dict(sorted(facts['tools'].items()))}"
                         + (f", prime tower {facts['tower'][0]:.0f}..{facts['tower'][2]:.0f} x "
-                           f"{facts['tower'][1]:.0f}..{facts['tower'][3]:.0f}" if facts["tower"] else ""))
+                           f"{facts['tower'][1]:.0f}..{facts['tower'][3]:.0f}" if facts["tower"] else "")
+                        + (f" ({facts['tower_share']:.0%} of the filament)" if facts["tower_share"] else ""))
             if facts["manual"]:
                 problems.append(f"{name}: the G-code stops for a person ({dict(facts['manual'])}) -- "
                                 f"not a print-and-go multicolor file")

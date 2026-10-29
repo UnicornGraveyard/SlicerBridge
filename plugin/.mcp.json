@@ -10,6 +10,7 @@
         "SLICERBRIDGE_ORCASLICER": "${user_config.orcaslicer}",
         "SLICERBRIDGE_BAMBU_STUDIO": "${user_config.bambu_studio}",
         "SLICERBRIDGE_PRUSASLICER": "${user_config.prusaslicer}",
+        "SLICERBRIDGE_SNAPMAKER_ORCA": "${user_config.snapmaker_orca}",
         "SLICERBRIDGE_CREALITY_PRINT": "${user_config.creality_print}",
         "SLICERBRIDGE_ELEGOOSLICER": "${user_config.elegooslicer}",
         "SLICERBRIDGE_ANYCUBIC_SLICER_NEXT": "${user_config.anycubic_slicer_next}",

@@ -44,6 +44,12 @@
           "format": "string"
         },
         {
+          "name": "SLICERBRIDGE_SNAPMAKER_ORCA",
+          "description": "Where Snapmaker Orca, which slices the Snapmaker U1 file is installed (default: /Applications)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
           "name": "SLICERBRIDGE_CREALITY_PRINT",
           "description": "Where Creality Print, for brand-check only is installed (default: /Applications)",
           "isRequired": false,

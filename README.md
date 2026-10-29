@@ -106,7 +106,7 @@ It builds each printer's settings with that printer's slicer, so install the one
 | Bambu Lab printers | [Bambu Studio](https://bambulab.com/en/download/studio) |
 | Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker | [OrcaSlicer 2.4.2](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/v2.4.2) |
 | Prusa printers | [PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/) |
-| Snapmaker U1 | nothing: its templates are built in |
+| Snapmaker U1 | nothing: its templates are built in ([Snapmaker Orca](https://www.snapmaker.com/snapmaker-orca) to `--slice` it) |
 
 Then `slicerbridge doctor` shows what it found. Details, other install locations and environment variables:
 [docs/install.md](docs/install.md).
