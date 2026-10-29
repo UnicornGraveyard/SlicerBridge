@@ -85,5 +85,5 @@ def test_snapmaker_orca_is_found_where_it_installs():
     s = printers.SLICERS["snapmaker"]
     assert s.cask == "snapmaker-orca" and s.exe == "Snapmaker_Orca"
     mac = printers.Slicer(s.name, check.Path("/Applications/Snapmaker Orca.app"), exe=s.exe)
-    assert str(mac.binary) == "/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca"
+    assert mac.binary.as_posix() == "/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca"
     assert printers.env_var(s) == "SLICERBRIDGE_SNAPMAKER_ORCA"
