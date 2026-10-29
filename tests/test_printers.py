@@ -41,3 +41,35 @@ def test_file_names_name_the_printer():
 def test_cache_follows_the_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("SLICERBRIDGE_CACHE", str(tmp_path))
     assert P.cache_dir() == tmp_path
+
+
+def _missing_orca(monkeypatch, tmp_path, env=None):
+    calls = []
+    monkeypatch.setattr(P.sys, "platform", "darwin")
+    monkeypatch.setattr(P.shutil, "which", lambda name: "/opt/homebrew/bin/brew")
+    monkeypatch.setattr(P.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(P, "_TRIED_CASKS", set())
+    if env:
+        monkeypatch.setenv("SLICERBRIDGE_ORCASLICER", env)
+    else:
+        monkeypatch.delenv("SLICERBRIDGE_ORCASLICER", raising=False)
+    return P.Slicer("OrcaSlicer", tmp_path / "OrcaSlicer.app", cask="orcaslicer"), calls
+
+
+def test_a_missing_orcaslicer_is_installed_with_homebrew_once(monkeypatch, tmp_path):
+    orca, calls = _missing_orca(monkeypatch, tmp_path)
+    P.ensure_installed(orca)
+    P.ensure_installed(orca)  # the next printer in the same run: not again
+    assert calls == [["/opt/homebrew/bin/brew", "install", "--cask", "orcaslicer"]]
+    assert "brew install --cask orcaslicer" in P.not_found(orca)
+
+
+def test_homebrew_never_installs_over_a_path_someone_set_or_a_slicer_that_is_there(monkeypatch, tmp_path):
+    orca, calls = _missing_orca(monkeypatch, tmp_path, env=str(tmp_path / "OrcaSlicer-2.4.2.app"))
+    P.ensure_installed(orca)
+    assert calls == [] and "unset SLICERBRIDGE_ORCASLICER" in P.not_found(orca)
+    monkeypatch.delenv("SLICERBRIDGE_ORCASLICER")
+    orca.binary.parent.mkdir(parents=True)
+    orca.binary.touch()
+    P.ensure_installed(orca)
+    assert calls == []

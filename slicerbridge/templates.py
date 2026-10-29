@@ -26,7 +26,7 @@ import zipfile
 from pathlib import Path
 
 from .errors import Refusal
-from .printers import PRINTERS, SLICERS, TEMPLATES, Slicer, run_slicer
+from .printers import PRINTERS, SLICERS, TEMPLATES, Slicer, ensure_installed, not_found, run_slicer
 
 # Not filament settings, though some filament preset files carry them.
 NOT_FILAMENT = {"from", "name", "inherits", "instantiation", "setting_id", "filament_id",
@@ -309,8 +309,9 @@ def build(key: str) -> list[str]:
     """Write <cache>/templates/<key>/<TYPE>.3mf for one printer; returns problems (empty when fine)."""
     p = PRINTERS[key]
     slicer = SLICERS[p.slicer]
+    ensure_installed(slicer)
     if not slicer.binary.exists():
-        return [f"{slicer.name} isn't at {slicer.app}: install it, or point SLICERBRIDGE_{slicer.name.upper().replace(' ', '_')} at it"]
+        return [not_found(slicer)]
     index = preset_index(p.vendor, slicer)
     machine = index.get(("machine", p.machine))
     process = index.get(("process", p.process))
@@ -401,9 +402,9 @@ def load(key: str) -> tuple[dict, dict]:
     dest = TEMPLATES / key
     p = PRINTERS[key]
     slicer = SLICERS[p.slicer]
+    ensure_installed(slicer)
     if not slicer.installed:
-        env = "SLICERBRIDGE_" + slicer.name.upper().replace(" ", "_")
-        raise Refusal(f"{slicer.name} isn't at {slicer.app}: install it, or point {env} at it")
+        raise Refusal(not_found(slicer))
     meta = json.loads((dest / "meta.json").read_text(encoding="utf-8")) if (dest / "meta.json").exists() else {}
     stale = (meta.get("slicer_version") != app_version(slicer) or meta.get("machine") != p.machine
              or meta.get("process") != p.process or meta.get("filaments") != p.filaments)

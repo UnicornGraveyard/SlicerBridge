@@ -18,6 +18,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,7 @@ class Slicer:
     library: str = ""  # a profiles/ folder of shared filaments that vendor presets inherit from
     exe: str = ""  # the macOS binary's name, when it isn't the slicer's name without spaces
     cli: tuple = ()  # arguments its command line needs before any other
+    cask: str = ""  # its Homebrew cask, installed on macOS when the slicer isn't found
 
     @property
     def binary(self) -> Path:
@@ -135,7 +137,7 @@ def file_safe(text: str) -> str:
 SLICERS = {
     "orca":  Slicer("OrcaSlicer", _app("SLICERBRIDGE_ORCASLICER", *_installs(
         mac=("/Applications/OrcaSlicer.app", "~/Applications/OrcaSlicer.app"),
-        windows=(r"%ProgramFiles%\OrcaSlicer\orca-slicer.exe",))), "OrcaFilamentLibrary"),
+        windows=(r"%ProgramFiles%\OrcaSlicer\orca-slicer.exe",))), "OrcaFilamentLibrary", cask="orcaslicer"),
     "bambu": Slicer("Bambu Studio", _app("SLICERBRIDGE_BAMBU_STUDIO", *_installs(
         mac=("/Applications/BambuStudio.app", "~/Applications/BambuStudio.app"),
         windows=(r"%ProgramFiles%\Bambu Studio\bambu-studio.exe",)))),
@@ -145,6 +147,44 @@ SLICERS = {
              "~/Applications/PrusaSlicer.app"),
         windows=(r"%ProgramFiles%\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",)))),
 }
+
+
+def env_var(slicer: Slicer) -> str:
+    """The environment variable that says where `slicer` is."""
+    return "SLICERBRIDGE_" + slicer.name.upper().replace(" ", "_")
+
+
+_TRIED_CASKS: set = set()
+
+
+def ensure_installed(slicer: Slicer) -> None:
+    """Install a missing slicer with Homebrew, on macOS, when it has a cask and brew is there.
+
+    Not when its variable names a path: that path is someone's choice, and the cask installs
+    to /Applications, where the slicer is looked for otherwise. Once a run, so a failed install
+    isn't retried for every printer; brew's output goes to stderr, never into the MCP server's
+    replies on stdout.
+    """
+    if (slicer.installed or not slicer.cask or sys.platform != "darwin" or os.environ.get(env_var(slicer))
+            or slicer.cask in _TRIED_CASKS):
+        return
+    _TRIED_CASKS.add(slicer.cask)
+    brew = shutil.which("brew") or next(
+        (b for b in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew") if Path(b).exists()), None)
+    if not brew:
+        return
+    print(f"  {slicer.name} isn't installed: brew install --cask {slicer.cask}", file=sys.stderr)
+    subprocess.run([brew, "install", "--cask", slicer.cask], stdout=sys.stderr, check=False)
+
+
+def not_found(slicer: Slicer) -> str:
+    """Why `slicer` can't be used, and what to do about it."""
+    env = env_var(slicer)
+    if os.environ.get(env):
+        return f"{slicer.name} isn't at {slicer.app}, where {env} points: install it there, or unset {env}"
+    how = f"install it (brew install --cask {slicer.cask})" if slicer.cask and sys.platform == "darwin" else "install it"
+    return f"{slicer.name} isn't at {slicer.app}: {how}, or point {env} at it"
+
 
 # The slicer each brand's owners download, for `slicerbridge brand-check`: the
 # files are built in OrcaSlicer, and each of these is a fork with its own

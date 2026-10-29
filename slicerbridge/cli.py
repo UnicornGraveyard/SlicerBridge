@@ -27,7 +27,7 @@ from pathlib import Path
 
 from . import __version__
 from .errors import Refusal
-from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir, engine_of, file_safe, label_of,
+from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir, not_found, engine_of, file_safe, label_of,
                        name_suffix, printer_of, select, split_name, tools_of, vendor_of)
 
 def _engine(name: str):
@@ -273,6 +273,8 @@ def cmd_doctor(a: argparse.Namespace) -> int:
             except Exception:  # an odd install still shows up as found
                 version = "?"
         print(f"  {s.name:22} {'found ' + version if s.installed else 'not found'}  {s.app}")
+        if not s.installed:
+            print(f"  {'':22} {not_found(s).split(': ', 1)[-1]}")
         if key == "orca" and s.installed and _older(version, TESTED_ORCASLICER):
             print(f"  {'':22} ⚠ SlicerBridge is tested with OrcaSlicer {TESTED_ORCASLICER}: older profiles stop for a\n"
                   f"  {'':22}   manual color change on some printers (Creality K1C, Elegoo Centauri Carbon). Install\n"

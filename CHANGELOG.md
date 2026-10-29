@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- On a Mac with Homebrew, a missing OrcaSlicer is installed when it's first needed (`brew install --cask
+  orcaslicer`), instead of skipping every printer it writes. Not while `SLICERBRIDGE_ORCASLICER` names a path;
+  then the message says to install it there or unset the variable. `doctor` says how to install a missing slicer.
 - Your print settings reach every file, not the printer's defaults. Settings were carried only if the project
   marked them as changed, and Bambu Studio marks nothing for a process preset with no system parent (detached,
   imported, or from a MakerWorld profile), so supports, brim, ironing and the like came out as each printer's
