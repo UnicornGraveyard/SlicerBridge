@@ -42,8 +42,21 @@ settings that shape the print are carried whatever it marks ([carry.py](../slice
 accelerations and line widths are tuned to the source's printer, and stay the target's unless marked. Prusa files
 take what PrusaSlicer has a setting for, and the Snapmaker U1 the same as the others. Then the target's slicer
 reads the whole file back: a carried
-value it doesn't take keeps the printer's own, and the output says so. A value the printer owns (its prime
-tower, purge volumes, machine limits) is never carried.
+value it doesn't take keeps the printer's own, and the output says so. The U1's file has no slicer to read it
+back while it's written, so a carried -1 (Bambu Studio's auto, which some Snapmaker Orca versions won't load)
+keeps the template's value, and with `--slice` any setting Snapmaker Orca won't load keeps the template's and
+the file is sliced again. A value the printer owns (its prime tower, purge volumes, machine limits) is never
+carried.
+
+## Tall prints
+
+The prime tower climbs as long as tools swap, and a tall, thin tower is easy for the nozzle to knock over. A
+plate taller than 100 mm gets a heavier tower ([tall.py](../slicerbridge/tall.py)): a 10 mm brim, ribs 20 mm
+longer and 12 mm wide, purge lines spaced 150%, and the tower printed at 60 mm/s at most, in each slicer's own
+setting names. These are minimums: a printer whose tower is already heavier keeps its own. The wider base needs
+room, so each file gets the heaviest of three steps its plates have room for: the whole heavier tower; the same
+brim, spacing and speed on the printer's own ribs; or only the slower tower, with a warning to slice it and
+look. PrusaSlicer's wipe tower has no ribs or speed of its own, so Prusa files get the brim and spacing.
 
 ## Plates and size
 
@@ -58,7 +71,9 @@ the bed is centered at full size with a warning and the scale that would fit.
 - **prusa**: Panda2Prusa writes a PrusaSlicer project per plate (PrusaSlicer has no plates), with the printer's
   PrusaSlicer profile and the wipe tower placed beside the model.
 - **u1**: the Snapmaker U1 project, from [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates, stamped
-  with the template's own version so Snapmaker Orca opens it without complaint.
+  with the template's own version so Snapmaker Orca opens it without complaint. With `--slice`, Snapmaker Orca
+  slices it; when its command line crashes (2.4.0 did, on a file its app slices), the file is kept with a
+  warning to slice it in the app.
 
 ## Checks
 
