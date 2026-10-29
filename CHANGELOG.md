@@ -8,6 +8,9 @@
   The settings are minimums: a printer's own heavier tower stays. The Bambu and OrcaSlicer-family files read
   them back through their slicer like the carried print settings, and check 14 fails a tall file on the light
   tower. A tower footprint counts longer or wider ribs, so the room kept for it grows with them.
+- A tall file gets the heaviest tower its plates have room for: the whole heavier tower; else the brim, spacing
+  and speed on the printer's own ribs (the longer ribs reach furthest); else the slower tower alone, with a
+  warning.
 - Snapmaker U1: a plate taller than 100 mm gets a heavier prime tower (brim 10 mm, extra rib length 20 mm, rib
   width 12 mm, purge spacing 150%, tower speed 60 mm/s), placed and checked for room with that wider base. Where
   the tower's strip can't hold it, the file gets only the slower tower and a warning to slice it in Snapmaker

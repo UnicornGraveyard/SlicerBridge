@@ -498,20 +498,22 @@ def place_all(slug: str, plates: list[Plate], bed: Bed,
     return first  # crowded at any width: the printer's own, and a warning
 
 
-def tall_tower(slug: str, plates: list[Plate], cfg: dict, slicer: str) -> tuple[dict, bool]:
-    """({setting: value} for a tall print's prime tower, whether its wider base had room).
+def tall_tower(slug: str, plates: list[Plate], cfg: dict, slicer: str) -> tuple[dict, str]:
+    """({setting: value} for a tall print's prime tower, the tall.STEPS step it got).
 
-    Over tall.TALL_PRINT_MM, with a tower: the heavier tower if every plate, placed with
-    its wider base, finds room; else only the slower tower. Nothing for anything else.
+    Over tall.TALL_PRINT_MM, with a tower: the heaviest step every plate, placed with
+    that step's base, finds room for; the last needs none. Nothing for anything else.
     """
     if Bed.of(cfg).tower is None or max(p.size[2] for p in plates) <= tall.TALL_PRINT_MM:
-        return {}, False
-    heavy = tall.settings(cfg, tall.TOWER[slicer])
-    heavy_cfg = {**cfg, **heavy}
-    tried, _w, _b = place_all(slug, plates, Bed.of(heavy_cfg), heavy_cfg)
-    if not any(pl.crowded or pl.excluded or not pl.fits for pl in tried):
-        return heavy, True
-    return tall.settings(cfg, tall.SLOWER[slicer]), False
+        return {}, ""
+    *roomy_steps, (last, rules) = tall.STEPS[slicer]
+    for name, step in roomy_steps:
+        heavy = tall.settings(cfg, step)
+        heavy_cfg = {**cfg, **heavy}
+        tried, _w, _b = place_all(slug, plates, Bed.of(heavy_cfg), heavy_cfg)
+        if not any(pl.crowded or pl.excluded or not pl.fits for pl in tried):
+            return heavy, name
+    return tall.settings(cfg, rules), last
 
 
 def retransform_items(xml: str, transforms: dict) -> str:
@@ -927,7 +929,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
     # if every plate has room for it; if not, only the slower tower. It's read back
     # with the carried settings: a value the slicer won't take keeps the printer's.
     tallest = max(p.size[2] for p in m.plates)
-    tower_extra, roomy = tall_tower(m.slug, m.plates, likely, printer.slicer)
+    tower_extra, tower_step = tall_tower(m.slug, m.plates, likely, printer.slicer)
     if tower_extra:
         likely = {**likely, **tower_extra}
         bed = Bed.of(likely)
@@ -1022,13 +1024,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         print("       kept the printer's own " + "; ".join(f"{k} ({why})" for k, why in dropped.items()))
     if tallest > tall.TALL_PRINT_MM and bed.tower is not None:
         got = {k: v for k, v in tower_extra.items() if k not in dropped}
-        if roomy:
-            print(f"       {tallest:.0f} mm tall, over {tall.TALL_PRINT_MM:g}: heavier prime tower"
-                  + (f" ({tall.describe(got)})" if got else " (the printer's own already is)"))
-        else:
-            print(f"       ⚠ {tallest:.0f} mm tall, over {tall.TALL_PRINT_MM:g}, but there's no room for the heavier "
-                  f"tower's base: slower tower only" + (f" ({tall.describe(got)})" if got else "")
-                  + ". Slice it, and if the model leaves room, give the tower a bigger brim and longer ribs")
+        print(f"       {tall.say(tower_step, tallest, got)}")
     if tower_width is not None and abs(tower_width - bed.tower) > 1e-6:
         print(f"       prime tower {tower_width:g} mm wide (the printer's is {bed.tower:g}) to fit the space left")
     if tower_brim is not None:

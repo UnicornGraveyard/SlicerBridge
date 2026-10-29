@@ -44,7 +44,8 @@ And whatever the source:
      tall prints get (tall.py): brim, rib length and width, purge spacing, and a
      tower speed ceiling, in its slicer's names. Where that wider base wouldn't
      fit at the file's tower spot (it would touch the model or leave the bed),
-     only the slower tower is required, with a warning.
+     the same on the file's own ribs is required; where that wouldn't fit either,
+     only the slower tower, with a warning.
 
 The paint decoder is checks/u1.py's, written from the format: the conversion
 engine (Panda2Prusa) never checks its own work. Standard library only.
@@ -255,6 +256,7 @@ TALL_TOWER_MIN = {  # (setting, value, True if the value is a ceiling)
               ("prime_tower_rib_width", 12.0, False), ("prime_tower_infill_gap", 150.0, False),
               ("prime_tower_max_speed", 60.0, True)),
 }
+RIB_KEYS = {"wipe_tower_extra_rib_length", "wipe_tower_rib_width", "prime_tower_extra_rib_length", "prime_tower_rib_width"}
 
 
 def rib_reach(cfg: dict) -> float:
@@ -478,18 +480,21 @@ def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple
         return [], [], []
     pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
     area = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
-    heavy = dict(cfg)
-    for key, want, _ceiling in rules:
-        if key in heavy:
-            heavy[key] = f"{want:g}"
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
-    roomy = all(b and idx < len(txs) and idx < len(tys) and tower_clear(
-        z, b[0], tower_rect(heavy, (float(txs[idx]), float(tys[idx]))), (b[1][0], b[1][1], b[2][0], b[2][1]), area)
-        for idx, b in enumerate(boxes))
+
+    def fits(step: tuple) -> bool:
+        heavy = {**cfg, **{key: f"{want:g}" for key, want, _c in step if key in cfg}}
+        return all(b and idx < len(txs) and idx < len(tys) and tower_clear(
+            z, b[0], tower_rect(heavy, (float(txs[idx]), float(tys[idx]))), (b[1][0], b[1][1], b[2][0], b[2][1]), area)
+            for idx, b in enumerate(boxes))
+
+    stock_ribs = tuple(t for t in rules if t[0] not in RIB_KEYS)
+    owed = next((step for step in (rules, stock_ribs) if fits(step)), ())
+    roomy, owed_keys = owed is rules, {key for key, _w, _c in owed}
     weak = []
     for key, want, ceiling in rules:
-        if key not in cfg or not (roomy or ceiling):
-            continue  # not this slicer's setting, or no room for the wider base: only the slower tower is owed
+        if key not in cfg or not (key in owed_keys or ceiling):
+            continue  # not this slicer's setting, or no room for that part of the wider base: not owed
         got = _num(cfg.get(key))
         if got is None or (got > want if ceiling else got < want):
             weak.append(f"{key} {cfg.get(key)!r} (want {'<=' if ceiling else '>='} {want:g})")
@@ -497,6 +502,8 @@ def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple
         return [], [f"{tallest:.0f} mm tall on the light prime tower: {', '.join(weak)} -- convert it again"], []
     if roomy:
         return [f"tower     : {tallest:.0f} mm tall, heavier prime tower set"], [], []
+    if owed:
+        return [f"tower     : {tallest:.0f} mm tall, heavier prime tower on its own ribs set (no room for longer ones)"], [], []
     return [], [], [f"{tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower tower "
                     f"only -- slice it and give the tower a bigger base if there's room"]
 

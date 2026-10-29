@@ -49,7 +49,8 @@ And on its own, whatever the source:
      the u1 engine gives tall prints (TALL_TOWER there). U1 users lost Gatefang's
      tower (200 mm print) around layer 665 on a much lighter one. Where the heavier
      base can't fit at the file's tower spot (it would touch the model's footprint
-     or leave the bed), only the slower tower is required, with a ⚠.
+     or leave the bed), the same on the file's own ribs is required; where that
+     can't fit either, only the slower tower, with a ⚠.
 
 Standard library only: the paint decoder here is written from the format, not
 borrowed from Panda2Prusa, so the conversion engine isn't checking itself.
@@ -83,6 +84,9 @@ TALL_TOWER_MIN = (  # (setting, value, True if the value is a ceiling)
     ("wipe_tower_extra_spacing", 150.0, False),
     ("wipe_tower_max_purge_speed", 60.0, True),
 )
+# No room for the longer ribs: the rest, on the file's own ribs.
+TALL_TOWER_MIN_STOCK_RIBS = tuple(t for t in TALL_TOWER_MIN
+                                  if t[0] not in ("wipe_tower_extra_rib_length", "wipe_tower_rib_width"))
 
 CORE = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
 P_PATH = "{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}path"
@@ -111,15 +115,18 @@ def rib_reach(cfg: dict) -> float:
     return max(0.0, (extra + width) / (2 * math.sqrt(2)))
 
 
-def heavy_base_fits(cfg: dict, boxes: list[tuple]) -> bool:
-    """Whether TALL_TOWER_MIN's wider base, at this file's tower spots, clears every
-    plate's model footprint and stays on its bed. The same box check 9 draws."""
+def heavy_base_fits(cfg: dict, boxes: list[tuple], rules: tuple = TALL_TOWER_MIN) -> bool:
+    """Whether `rules`' wider base, at this file's tower spots, clears every plate's model
+    footprint and stays on its bed. The same box check 9 draws. Rules that set the ribs
+    want a rib wall; others keep the file's own."""
     pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
     area = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
     heavy = dict(cfg)
-    for key, want, _ceiling in TALL_TOWER_MIN:
+    for key, want, _ceiling in rules:
         heavy[key] = f"{want:g}"
-    pad = (_num(heavy["prime_tower_brim_width"]) or 0.0) + rib_reach({**heavy, "wipe_tower_wall_type": "rib"})
+    if any(key == "wipe_tower_rib_width" for key, _w, _c in rules):
+        heavy["wipe_tower_wall_type"] = "rib"
+    pad = (_num(heavy["prime_tower_brim_width"]) or 0.0) + rib_reach(heavy)
     tw = float(cfg.get("prime_tower_width") or 30)
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
     for idx, (number, a, b) in enumerate(boxes):
@@ -437,13 +444,15 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
     # 12. a tall print carries the heavier prime tower
     tallest = max((b[2] - a[2] for _n, a, b in boxes if a[0] != float("inf")), default=0.0)
     if cfg.get("enable_prime_tower") == "1" and tallest > TALL_PRINT_MM:
-        roomy = heavy_base_fits(cfg, boxes)
+        owed = next((r for r in (TALL_TOWER_MIN, TALL_TOWER_MIN_STOCK_RIBS) if heavy_base_fits(cfg, boxes, r)), ())
+        roomy = owed is TALL_TOWER_MIN
+        owed_keys = {key for key, _w, _c in owed}
         weak = []
         if roomy and cfg.get("wipe_tower_wall_type") != "rib":
             weak.append(f"wipe_tower_wall_type {cfg.get('wipe_tower_wall_type')!r} (want 'rib')")
         for key, want, ceiling in TALL_TOWER_MIN:
-            if not (roomy or ceiling):
-                continue  # no room for the wider base: only the slower tower is owed
+            if not (key in owed_keys or ceiling):
+                continue  # no room for that part of the wider base: not owed
             got = _num(cfg.get(key))
             if got is None or (got > want if ceiling else got < want):
                 weak.append(f"{key} {cfg.get(key)!r} (want {'<=' if ceiling else '>='} {want:g})")
@@ -452,6 +461,9 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
                             f"convert it again with slicerbridge")
         elif roomy:
             info.append(f"tower     : {tallest:.0f} mm tall, heavier prime tower set")
+        elif owed:
+            info.append(f"tower     : {tallest:.0f} mm tall, heavier prime tower on its own ribs set "
+                        f"(no room for longer ones)")
         else:
             info.append(f"⚠ {tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower "
                         f"tower only -- slice it in Snapmaker Orca, and give the tower a bigger base if there's room")

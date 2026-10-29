@@ -21,9 +21,19 @@ def test_the_tower_is_brought_up_to_the_minimums_and_no_further():
     assert tall.settings({"wipe_tower_brim_width": "2"}, tall.TOWER["prusa"]) == {"wipe_tower_brim_width": "10"}
 
 
-def test_the_u1_engine_gives_the_same_tower():
-    assert u1.TALL_TOWER == tall.settings(u1.load_template(False), tall.TOWER["orca"])
-    assert u1.TALL_TOWER_TIGHT == tall.settings(u1.load_template(False), tall.SLOWER["orca"])
+def test_the_u1_engine_gives_the_same_towers():
+    t = u1.load_template(False)
+    assert u1.TALL_TOWER == tall.settings(t, tall.TOWER["orca"])
+    assert u1.TALL_TOWER_STOCK_RIBS == tall.settings(t, tall.STOCK_RIBS["orca"])
+    assert u1.TALL_TOWER_TIGHT == tall.settings(t, tall.SLOWER["orca"])
+
+
+def test_each_slicer_steps_down_from_the_whole_tower_to_the_slower_one():
+    assert [name for name, _r in tall.STEPS["bambu"]] == [
+        "heavier prime tower", "heavier prime tower on the printer's own ribs", "slower tower only"]
+    assert [name for name, _r in tall.STEPS["prusa"]] == ["heavier prime tower", "slower tower only"]
+    assert {k for k, _v, _c in tall.STOCK_RIBS["bambu"]} == {
+        "prime_tower_brim_width", "prime_tower_infill_gap", "prime_tower_max_speed"}
 
 
 def test_longer_wider_ribs_widen_the_towers_footprint():
@@ -37,17 +47,18 @@ def test_longer_wider_ribs_widen_the_towers_footprint():
     assert heavy[2] == 10
 
 
-def _cube(size):
-    return orca.Plate(1, lo=[0.0, 0.0, 0.0], hi=[size, size, size])
+def _block(side, height=150.0):
+    return orca.Plate(1, lo=[0.0, 0.0, 0.0], hi=[side, side, height])
 
 
-def test_the_orca_engine_gives_a_tall_plate_with_room_the_heavier_tower():
+def test_the_orca_engine_gives_each_tall_plate_the_heaviest_tower_it_has_room_for():
     cfg = u1.load_template(False)  # a 270 mm Bambu-format OrcaSlicer bed with a rib tower
-    extra, roomy = orca.tall_tower("Tall", [_cube(120.0)], cfg, "orca")
-    assert roomy and extra == tall.settings(cfg, tall.TOWER["orca"])
-    extra, roomy = orca.tall_tower("Wide", [_cube(230.0)], cfg, "orca")
-    assert not roomy and extra == {"wipe_tower_max_purge_speed": "60"}
-    assert orca.tall_tower("Short", [_cube(100.0)], cfg, "orca") == ({}, False)
+    (full, _r), (stock, _s), (slower, _t) = tall.STEPS["orca"]
+    assert orca.tall_tower("Roomy", [_block(120.0)], cfg, "orca") == (tall.settings(cfg, tall.TOWER["orca"]), full)
+    assert orca.tall_tower("Snug", [_block(205.0)], cfg, "orca") == (
+        tall.settings(cfg, tall.STOCK_RIBS["orca"]), stock)
+    assert orca.tall_tower("Wide", [_block(230.0)], cfg, "orca") == ({"wipe_tower_max_purge_speed": "60"}, slower)
+    assert orca.tall_tower("Short", [_block(120.0, 100.0)], cfg, "orca") == ({}, "")
 
 
 def _tall_file(tmp_path, cfg):
@@ -74,6 +85,13 @@ def test_check_14_fails_a_tall_file_on_the_light_tower_and_passes_the_heavier(tm
         _info, problems, warnings = check.tall_tower(z, edge, boxes, "orca")
         assert problems == [] and "slower tower only" in warnings[0]
         assert check.tall_tower(z, cfg, [(1, (0.0, 0.0, 0.0), (120.0, 120.0, 100.0))], "orca") == ([], [], [])
+        # Room for the wider brim but not the longer ribs: the rest is owed, on the file's own ribs.
+        snug = {**cfg, "wipe_tower_x": ["220"], **tall.settings(cfg, tall.STOCK_RIBS["orca"])}
+        slower = {**cfg, "wipe_tower_x": ["220"], **tall.settings(cfg, tall.SLOWER["orca"])}
+        problems = check.tall_tower(z, slower, boxes, "orca")[1]  # the slower tower alone isn't enough there
+        assert problems and "prime_tower_brim_width" in problems[0] and "rib" not in problems[0]
+        info, problems, _w = check.tall_tower(z, snug, boxes, "orca")
+        assert problems == [] and "on its own ribs set" in info[0]
 
 
 def test_the_prusa_layout_says_whether_the_wider_brim_has_room():

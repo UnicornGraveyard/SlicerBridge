@@ -22,8 +22,10 @@ fit: scaling it is the call of whoever prints it, in Snapmaker Orca.
 
 Prime tower: the U1 template's, except on a model taller than TALL_PRINT_MM.
 That one gets TALL_TOWER, a heavier tower built for the height, if the strip
-left for the tower holds its wider base. If not, it gets TALL_TOWER_TIGHT, and a
-warning to slice it in Snapmaker Orca and look.
+left for the tower holds its wider base; else TALL_TOWER_STOCK_RIBS, the same on
+the template's ribs, if the strip holds that; else TALL_TOWER_TIGHT, and a
+warning to slice it in Snapmaker Orca and look. The same steps as every other
+printer's (tall.py).
 
 Every file passes checks/u1.py's audit before it is written.
 """
@@ -48,6 +50,7 @@ from .._vendor.panda2prusa.convert import describe, used_filaments
 from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
+from .. import tall
 from ..carry import carry_print_settings
 from ..checks import u1 as u1check
 from ..errors import Refusal
@@ -90,8 +93,12 @@ TALL_TOWER = {
     "wipe_tower_extra_spacing": "150%",
     "wipe_tower_max_purge_speed": "60",
 }
-# A tall model whose tower strip can't hold that wider base keeps the template's
-# base and gets only what costs no room: the slower tower.
+# A strip that can't hold the longer ribs may still hold the wider brim: the rest of
+# the tower on the template's ribs, since the ribs are what reach furthest.
+TALL_TOWER_STOCK_RIBS = {k: v for k, v in TALL_TOWER.items()
+                         if k not in ("wipe_tower_extra_rib_length", "wipe_tower_rib_width")}
+# A tall model whose tower strip can't hold either keeps the template's base and
+# gets only what costs no room: the slower tower.
 TALL_TOWER_TIGHT = {"wipe_tower_max_purge_speed": TALL_TOWER["wipe_tower_max_purge_speed"]}
 
 ROOT_MODEL = "3D/3dmodel.model"
@@ -507,11 +514,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         tallest = max(p.size[2] for p in plates)
         tower_extra: dict = {}
         if bed.tower is not None and tallest > TALL_PRINT_MM:
-            heavy = Bed.of({**u1, **TALL_TOWER})
-            roomy = not any(pl.tight or not pl.fits for pl in (place(slug, p, len(plates), heavy) for p in plates))
-            tower_extra = TALL_TOWER if roomy else TALL_TOWER_TIGHT
-            if roomy:  # placed, and checked for room, with the heavier tower's base
-                bed = heavy
+            tower_extra = TALL_TOWER_TIGHT
+            for step in (TALL_TOWER, TALL_TOWER_STOCK_RIBS):
+                heavy = Bed.of({**u1, **step})
+                if not any(pl.tight or not pl.fits for pl in (place(slug, p, len(plates), heavy) for p in plates)):
+                    tower_extra, bed = step, heavy  # placed, and checked for room, with that tower's base
+                    break
         placements = [place(slug, p, len(plates), bed) for p in plates]
     except Refusal:
         if out_path.exists() and ours(out_path):
@@ -679,13 +687,9 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     news = ",".join(str(mapping[s]) for s in used)
     how = "1:1" if identity else f"{len(recoded):,} paint strings re-encoded"
     print(f"  ok  {slug:12} slots [{slots}] -> [{news}] ({how}) -> {out_path.name}  ({mb:.0f} MB)")
-    if tower_extra is TALL_TOWER:
-        print(f"       {tallest:.0f} mm tall, over {TALL_PRINT_MM:g}: heavier prime tower ("
-              + ", ".join(f"{k} {v}" for k, v in TALL_TOWER.items()) + ")")
-    elif tower_extra:
-        print(f"       ⚠ {tallest:.0f} mm tall, over {TALL_PRINT_MM:g}, but the tower strip only holds the "
-              f"template's base: slower tower only. Slice it in Snapmaker Orca, and if the model leaves "
-              f"room, give the tower a bigger brim and longer ribs")
+    if tower_extra:
+        step = {id(TALL_TOWER): 0, id(TALL_TOWER_STOCK_RIBS): 1}.get(id(tower_extra), -1)
+        print(f"       {tall.say(tall.STEPS['orca'][step][0], tallest, tower_extra)}")
     for p, pl in zip(plates, placements):
         where = f"plate {p.number}: " if len(plates) > 1 else ""
         print(f"       {where}{pl.size[0]:.1f} x {pl.size[1]:.1f} x {pl.size[2]:.1f} mm"

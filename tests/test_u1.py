@@ -93,3 +93,12 @@ def test_check_12_fails_a_tall_file_on_the_light_tower(tmp_path):
             zout.writestr(item, data)
     _info, problems = check.audit(light, src)
     assert any("on the light prime tower" in p and "prime_tower_brim_width" in p for p in problems)
+
+
+def test_a_tall_plate_with_room_for_the_brim_but_not_the_longer_ribs_gets_the_rest(tmp_path, capsys):
+    src, f = _u1_file(tmp_path, 195.0, "Snug")
+    s, t = _settings(f), _template()
+    assert {k: s[k] for k in TOWER_KEYS} == {**{k: t[k] for k in TOWER_KEYS}, **engine.TALL_TOWER_STOCK_RIBS}
+    assert "on the printer's own ribs" in capsys.readouterr().out
+    info, problems = check.audit(f, src)
+    assert problems == [] and any("on its own ribs set" in line for line in info)

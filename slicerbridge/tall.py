@@ -9,9 +9,11 @@ wider purge line spacing, and a slower tower, so a nozzle that catches it hits
 softer. A starting point, not yet proven on a print.
 
 The settings are minimums (and the speed a ceiling): a printer whose own tower is
-already heavier keeps its own. A file whose plates can't hold the wider base keeps
-the printer's base and gets only what costs no room, the slower tower (SLOWER).
-The checks write these numbers out for themselves rather than importing them.
+already heavier keeps its own. A file gets the heaviest of STEPS its plates have room
+for: the whole tower (TOWER); else the same brim, spacing and speed on the printer's
+own ribs (STOCK_RIBS), since longer ribs are what reach furthest; else only what
+costs no room, the slower tower (SLOWER). The checks write these numbers out for
+themselves rather than importing them.
 """
 from __future__ import annotations
 
@@ -33,8 +35,22 @@ TOWER = {
     "prusa": (("wipe_tower_brim_width", 10.0, False),
               ("wipe_tower_extra_spacing", 150.0, False)),
 }
-# What a tall file gets when there's no room for the wider base: what costs none.
+RIBS = {"wipe_tower_extra_rib_length", "wipe_tower_rib_width", "prime_tower_extra_rib_length", "prime_tower_rib_width"}
+# No room for the longer ribs: the brim, spacing and speed on the printer's own ribs.
+STOCK_RIBS = {slicer: tuple(t for t in rules if t[0] not in RIBS) for slicer, rules in TOWER.items()}
+# No room for the wider brim either: what costs none.
 SLOWER = {slicer: tuple(t for t in rules if t[2]) for slicer, rules in TOWER.items()}
+
+
+def _steps(slicer: str) -> tuple:
+    """(name for the output, rules) to try in turn, heaviest first, each once. The last needs no room."""
+    out = [("heavier prime tower", TOWER[slicer])]
+    if STOCK_RIBS[slicer] != TOWER[slicer]:  # PrusaSlicer has no ribs to give up
+        out.append(("heavier prime tower on the printer's own ribs", STOCK_RIBS[slicer]))
+    return (*out, ("slower tower only", SLOWER[slicer]))
+
+
+STEPS = {slicer: _steps(slicer) for slicer in TOWER}
 
 PERCENT = {"wipe_tower_extra_spacing", "prime_tower_infill_gap"}
 
@@ -70,3 +86,15 @@ def settings(cfg: dict, rules: tuple) -> dict:
 def describe(changed: dict) -> str:
     """The settings a file got, for the output: "prime_tower_brim_width 10, ...". """
     return ", ".join(f"{k} {v[0] if isinstance(v, list) else v}" for k, v in changed.items())
+
+
+def say(step: str, tallest: float, changed: dict) -> str:
+    """The line the output gives a tall print's tower: the step it got, and its settings."""
+    got = f" ({describe(changed)})" if changed else " (the printer's own already is)"
+    if step == STEPS["orca"][0][0]:
+        return f"{tallest:.0f} mm tall, over {TALL_PRINT_MM:g}: {step}{got}"
+    if step != STEPS["orca"][-1][0]:
+        return f"{tallest:.0f} mm tall, over {TALL_PRINT_MM:g}: {step}, no room for longer ones{got}"
+    return (f"⚠ {tallest:.0f} mm tall, over {TALL_PRINT_MM:g}, but there's no room for a wider tower base: "
+            f"{step}{got if changed else ''}. Slice it, and if the model leaves room, give the tower a bigger "
+            f"brim and longer ribs")

@@ -36,8 +36,9 @@ And whatever the source:
 14. A plate taller than 100 mm carries at least the heavier prime tower tall prints get
     ([tall.py](../slicerbridge/tall.py)), in the slicer's own names: brim 10 mm, extra rib length 20 mm, rib
     width 12 mm, purge spacing 150%, tower speed 60 mm/s at most. Where that wider base wouldn't fit at the
-    file's tower spot (it would touch the model or leave the bed), only the slower tower is required, with a
-    warning. The minimums are written out in the check, not taken from the engine.
+    file's tower spot (it would touch the model or leave the bed), the brim, spacing and speed are required on
+    the file's own ribs; where that wouldn't fit either, only the slower tower, with a warning. The minimums are
+    written out in the check, not taken from the engine.
 
 ## u1 engine (Snapmaker U1)
 
@@ -49,8 +50,9 @@ And whatever the source:
 10. The version stamp is the U1 template's. 11. Size unchanged.
 12. A plate taller than 100 mm carries at least the heavier prime tower the engine gives tall prints: brim
     10 mm, extra rib length 20 mm, rib width 12 mm, purge spacing 150%, tower speed 60 mm/s at most, rib wall.
-    Where that wider base wouldn't fit at the file's tower spot (it would touch the model or leave the bed), only
-    the slower tower is required, with a warning to slice it in Snapmaker Orca and look. The minimums are written
+    Where that wider base wouldn't fit at the file's tower spot (it would touch the model or leave the bed), the
+    brim, spacing and speed are required on the file's own ribs; where that wouldn't fit either, only the slower
+    tower, with a warning to slice it in Snapmaker Orca and look. The minimums are written
     out in the check, not taken from the engine.
 
 ## prusa engine (Prusa printers)
