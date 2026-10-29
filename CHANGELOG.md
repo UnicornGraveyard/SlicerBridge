@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-29)
 
 - Snapmaker U1: `--slice` slices its file in Snapmaker Orca, as the other printers' are sliced in theirs (check
   13), and a file that won't slice isn't written. On a Mac with Homebrew a missing Snapmaker Orca is installed
