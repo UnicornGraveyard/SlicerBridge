@@ -20,6 +20,13 @@ to one edge and the tower into the space left. A model bigger than the bed is
 centered on its plate at full size, with a warning and the scale that would
 fit: scaling it is the call of whoever prints it, in Snapmaker Orca.
 
+Prime tower: the U1 template's, except on a model taller than TALL_PRINT_MM.
+That one gets TALL_TOWER, a heavier tower built for the height, if the strip
+left for the tower holds its wider base; else TALL_TOWER_STOCK_RIBS, the same on
+the template's ribs, if the strip holds that; else TALL_TOWER_TIGHT, and a
+warning to slice it in Snapmaker Orca and look. The same steps as every other
+printer's (tall.py).
+
 Every file passes checks/u1.py's audit before it is written.
 """
 from __future__ import annotations
@@ -43,6 +50,7 @@ from .._vendor.panda2prusa.convert import describe, used_filaments
 from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
+from .. import tall
 from ..carry import carry_print_settings
 from ..checks import u1 as u1check
 from ..errors import Refusal
@@ -65,6 +73,33 @@ ITEM = re.compile(r'<item\b[^>]*>')
 PLATE_STRIDE = 1.2
 EPS = 1e-4                 # mm of tolerance on bed edges
 TOWER_DEPTH_GUESS = 40.0   # mm; the slicer sizes the prime tower from the purges
+
+# Tall prints get a heavier prime tower. The tower climbs as long as tools swap,
+# and a face-up wall mount swaps tools nearly to its top: Gatefang is 200 mm tall
+# with three swaps a layer to about 176 mm. U1 users reported its tower knocked
+# off around layer 665 (2026-10-28). The file they printed, GateFang_SnamakerU1.3mf
+# (0.16 mm layers, so about 107 mm up), had a far lighter tower than the template:
+# prime volume 10, ribs +3 mm x 3 mm, no fillet. The template's tower (prime volume
+# 45, ribs +8 mm x 8 mm, fillet) is bigger but unproven at 200 mm, so tall files
+# also get the levers Snapmaker's U1 guide names for a collapsing tower: a wider
+# brim, longer and wider ribs, wider purge line spacing. The slower tower makes a
+# nozzle that catches it hit softer. A starting point, not yet proven on a print.
+# checks/u1.py check 12 holds every tall file whose tower spot has room to at least these.
+TALL_PRINT_MM = 100.0
+TALL_TOWER = {
+    "prime_tower_brim_width": "10",
+    "wipe_tower_extra_rib_length": "20",
+    "wipe_tower_rib_width": "12",
+    "wipe_tower_extra_spacing": "150%",
+    "wipe_tower_max_purge_speed": "60",
+}
+# A strip that can't hold the longer ribs may still hold the wider brim: the rest of
+# the tower on the template's ribs, since the ribs are what reach furthest.
+TALL_TOWER_STOCK_RIBS = {k: v for k, v in TALL_TOWER.items()
+                         if k not in ("wipe_tower_extra_rib_length", "wipe_tower_rib_width")}
+# A tall model whose tower strip can't hold either keeps the template's base and
+# gets only what costs no room: the slower tower.
+TALL_TOWER_TIGHT = {"wipe_tower_max_purge_speed": TALL_TOWER["wipe_tower_max_purge_speed"]}
 
 ROOT_MODEL = "3D/3dmodel.model"
 CORE_OBJECT = ns.q(ns.CORE, "object")
@@ -127,6 +162,7 @@ class Bed:
     tower: Optional[float]  # prime tower width, if the profile prints one
     tower_brim: float = 0.0
     tower_at: tuple = (0.0, 0.0)  # the profile's own prime tower spot
+    rib_reach: float = 0.0  # how far a rib wall reaches past the tower on each side, at the base
 
     @classmethod
     def of(cls, settings: dict) -> "Bed":
@@ -135,7 +171,7 @@ class Bed:
         tower = float(settings.get("prime_tower_width") or 30) if settings.get("enable_prime_tower") == "1" else None
         at = (float((settings.get("wipe_tower_x") or ["0"])[0]), float((settings.get("wipe_tower_y") or ["0"])[0]))
         return cls(min(xs), min(ys), max(xs), max(ys), float(settings["printable_height"]), tower,
-                   float(settings.get("prime_tower_brim_width") or 0), at)
+                   float(settings.get("prime_tower_brim_width") or 0), at, rib_reach(settings))
 
     @property
     def width(self) -> float:
@@ -144,6 +180,20 @@ class Bed:
     @property
     def depth(self) -> float:
         return self.y1 - self.y0
+
+
+def rib_reach(settings: dict) -> float:
+    """How far past the tower's sides a rib wall reaches, at the base.
+
+    The ribs run along the tower's diagonals and pass each corner by about half
+    the extra rib length, plus half the rib width. They taper to nothing at the
+    top, so the first layer is the widest. Only slicing knows it exactly.
+    """
+    if settings.get("enable_prime_tower") != "1" or settings.get("wipe_tower_wall_type") != "rib":
+        return 0.0
+    extra = float(settings.get("wipe_tower_extra_rib_length") or 0)
+    width = float(settings.get("wipe_tower_rib_width") or 0)
+    return max(0.0, (extra + width) / (2 * math.sqrt(2)))
 
 
 def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
@@ -339,8 +389,9 @@ def place(slug: str, plate: Plate, count: int, bed: Bed) -> Placement:
         tx = min(max((strip[0] + strip[2] - bed.tower) / 2, bed.x0), bed.x1 - bed.tower)
         ty = min(max((strip[1] + strip[3] - TOWER_DEPTH_GUESS) / 2, bed.y0), bed.y1 - TOWER_DEPTH_GUESS)
         tower = (tx, ty)
-        tight = (strip[2] - strip[0] < bed.tower + 2 * bed.tower_brim
-                 or strip[3] - strip[1] < TOWER_DEPTH_GUESS + 2 * bed.tower_brim)
+        pad = bed.tower_brim + bed.rib_reach
+        tight = (strip[2] - strip[0] < bed.tower + 2 * pad
+                 or strip[3] - strip[1] < TOWER_DEPTH_GUESS + 2 * pad)
 
     ox, oy = plate_origin(plate.number - 1, count, bed)
     pre = ROT90 if rotated else Transform.identity()
@@ -460,6 +511,15 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     try:
         used, plates = analyze(slug, src)
         ordered, mapping = plan(slug, src, used)
+        tallest = max(p.size[2] for p in plates)
+        tower_extra: dict = {}
+        if bed.tower is not None and tallest > TALL_PRINT_MM:
+            tower_extra = TALL_TOWER_TIGHT
+            for step in (TALL_TOWER, TALL_TOWER_STOCK_RIBS):
+                heavy = Bed.of({**u1, **step})
+                if not any(pl.tight or not pl.fits for pl in (place(slug, p, len(plates), heavy) for p in plates)):
+                    tower_extra, bed = step, heavy  # placed, and checked for room, with that tower's base
+                    break
         placements = [place(slug, p, len(plates), bed) for p in plates]
     except Refusal:
         if out_path.exists() and ours(out_path):
@@ -547,6 +607,7 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
             marked = list(combined.get("different_settings_to_system") or [""] * (TARGET_FILAMENTS + 2))
             marked[0] = ";".join(sorted({k for k in str(marked[0]).split(";") if k} | set(carried)))
             combined["different_settings_to_system"] = marked
+        combined.update(tower_extra)
         colors, types = [], []
         for f in ordered:
             c = f["color"]
@@ -626,6 +687,9 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     news = ",".join(str(mapping[s]) for s in used)
     how = "1:1" if identity else f"{len(recoded):,} paint strings re-encoded"
     print(f"  ok  {slug:12} slots [{slots}] -> [{news}] ({how}) -> {out_path.name}  ({mb:.0f} MB)")
+    if tower_extra:
+        step = {id(TALL_TOWER): 0, id(TALL_TOWER_STOCK_RIBS): 1}.get(id(tower_extra), -1)
+        print(f"       {tall.say(tall.STEPS['orca'][step][0], tallest, tower_extra)}")
     for p, pl in zip(plates, placements):
         where = f"plate {p.number}: " if len(plates) > 1 else ""
         print(f"       {where}{pl.size[0]:.1f} x {pl.size[1]:.1f} x {pl.size[2]:.1f} mm"
@@ -657,7 +721,8 @@ def inspect(src: Path) -> list[str]:
         else:
             fit = "fits turned 90" if rotated else "fits"
         where = f"plate {p.number}" if len(plates) > 1 else "size"
-        lines.append(f"    {where} on the {U1_LABEL}: {fit}")
+        tall = ", tall: heavier prime tower if its strip has room" if bed.tower is not None and p.size[2] > TALL_PRINT_MM else ""
+        lines.append(f"    {where} on the {U1_LABEL}: {fit}{tall}")
     return lines
 
 

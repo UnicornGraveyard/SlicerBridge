@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Every printer that prints a prime tower gets the U1's tall-print tower below, in its slicer's names
+  ([tall.py](slicerbridge/tall.py)): Bambu Studio's `prime_tower_*`, OrcaSlicer's `wipe_tower_*`, and on the
+  Prusa MMU3 and XL a 10 mm wipe tower brim and 150% purge spacing (PrusaSlicer's tower has no ribs or speed).
+  The settings are minimums: a printer's own heavier tower stays. The Bambu and OrcaSlicer-family files read
+  them back through their slicer like the carried print settings, and check 14 fails a tall file on the light
+  tower. A tower footprint counts longer or wider ribs, so the room kept for it grows with them.
+- A tall file gets the heaviest tower its plates have room for: the whole heavier tower; else the brim, spacing
+  and speed on the printer's own ribs (the longer ribs reach furthest); else the slower tower alone, with a
+  warning.
+- Snapmaker U1: a plate taller than 100 mm gets a heavier prime tower (brim 10 mm, extra rib length 20 mm, rib
+  width 12 mm, purge spacing 150%, tower speed 60 mm/s), placed and checked for room with that wider base. Where
+  the tower's strip can't hold it, the file gets only the slower tower and a warning to slice it in Snapmaker
+  Orca and look. The output says which tower a file got. U1 users lost Gatefang's tower (200 mm tall) around
+  layer 665 on the template's. Ported from the tall-print rule in the Unicorn Graveyard U1 converter.
+- U1 check 12: a tall file on the light tower fails. The tower-room test (placement, and check 9's warning)
+  counts the rib wall's reach as well as the brim, so a few short files may now get the tight-tower warning.
 - On a Mac with Homebrew, a missing OrcaSlicer is installed when it's first needed (`brew install --cask
   orcaslicer`), instead of skipping every printer it writes. Not while `SLICERBRIDGE_ORCASLICER` names a path;
   then the message says to install it there or unset the variable. `doctor` says how to install a missing slicer.

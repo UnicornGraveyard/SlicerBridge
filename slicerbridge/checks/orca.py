@@ -38,6 +38,15 @@ With --slice, also:
      tool changes the printer makes itself (no PAUSE or M600); the prime tower
      OrcaSlicer actually printed stays clear of the model's footprint.
 
+And whatever the source:
+
+ 14. A plate taller than TALL_PRINT_MM carries at least the heavier prime tower
+     tall prints get (tall.py): brim, rib length and width, purge spacing, and a
+     tower speed ceiling, in its slicer's names. Where that wider base wouldn't
+     fit at the file's tower spot (it would touch the model or leave the bed),
+     the same on the file's own ribs is required; where that wouldn't fit either,
+     only the slower tower, with a warning.
+
 The paint decoder is checks/u1.py's, written from the format: the conversion
 engine (Panda2Prusa) never checks its own work. Standard library only.
 """
@@ -150,6 +159,16 @@ def _first(v) -> float:
     return float((v[0] if isinstance(v, list) else v) or 0)
 
 
+def _num(v) -> float | None:
+    """A config number, "150%" and lists included; None if it isn't one."""
+    if isinstance(v, list):
+        v = v[0] if v else None
+    try:
+        return float(str(v).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        return None
+
+
 def tower_area(cfg: dict) -> float:
     """mm^2 of bed the prime tower's busiest layer needs, as OrcaSlicer's WipeTower sizes it.
 
@@ -220,6 +239,35 @@ RIB_EXTRA = (8.0, 5.5)
 # A plain tower's walls and brim lines past its width and depth: IronJaw's Kobra 3
 # tower (45 mm, 5 mm brim) printed 58.5 x 44.2 mm against 55 x 41.2.
 WALL_EXTRA = 4.0
+# RIB_EXTRA and WALL_EXTRA were measured on the printers' own rib walls (no extra
+# length, 8 mm wide): only what longer or wider ribs reach past those adds to the
+# footprint. A rib passes each corner by about half the extra length along the
+# diagonal plus half its width.
+STOCK_RIB_REACH = 8.0 / (2 * math.sqrt(2))
+
+# Check 14: a print taller than this needs at least the tower tall.py's TOWER sets.
+# Written out here on purpose, not imported from it.
+TALL_PRINT_MM = 100.0
+TALL_TOWER_MIN = {  # (setting, value, True if the value is a ceiling)
+    "orca": (("prime_tower_brim_width", 10.0, False), ("wipe_tower_extra_rib_length", 20.0, False),
+             ("wipe_tower_rib_width", 12.0, False), ("wipe_tower_extra_spacing", 150.0, False),
+             ("wipe_tower_max_purge_speed", 60.0, True)),
+    "bambu": (("prime_tower_brim_width", 10.0, False), ("prime_tower_extra_rib_length", 20.0, False),
+              ("prime_tower_rib_width", 12.0, False), ("prime_tower_infill_gap", 150.0, False),
+              ("prime_tower_max_speed", 60.0, True)),
+}
+RIB_KEYS = {"wipe_tower_extra_rib_length", "wipe_tower_rib_width", "prime_tower_extra_rib_length", "prime_tower_rib_width"}
+
+
+def rib_reach(cfg: dict) -> float:
+    """How far a tower's rib wall reaches past its sides at the base, in mm (0 without ribs)."""
+    if str(cfg.get("prime_tower_rib_wall")) == "1":  # Bambu Studio's
+        extra, width = cfg.get("prime_tower_extra_rib_length"), cfg.get("prime_tower_rib_width")
+    elif cfg.get("wipe_tower_wall_type") == "rib":  # OrcaSlicer's
+        extra, width = cfg.get("wipe_tower_extra_rib_length"), cfg.get("wipe_tower_rib_width")
+    else:
+        return 0.0
+    return max(0.0, (_first(extra) + _first(width)) / (2 * math.sqrt(2)))
 
 
 def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, float]:
@@ -233,10 +281,11 @@ def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, flo
     b = _first(cfg.get("prime_tower_brim_width"))
     b = AUTO_TOWER_BRIM if b < 0 else b
     area = tower_area(cfg)
+    ribs = 2 * max(0.0, rib_reach(cfg) - STOCK_RIB_REACH) if rib_reach(cfg) else 0.0
     if str(cfg.get("prime_tower_rib_wall")) == "1":
         side = math.sqrt(area)
-        return side + RIB_EXTRA[0], side + RIB_EXTRA[1], b
-    return w + WALL_EXTRA, area / w + WALL_EXTRA, b
+        return side + RIB_EXTRA[0] + ribs, side + RIB_EXTRA[1] + ribs, b
+    return w + WALL_EXTRA + ribs, area / w + WALL_EXTRA + ribs, b
 
 
 # The model's outline seen from above, as the cells of a CELL mm grid it covers.
@@ -405,15 +454,77 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
         if tower and idx < len(txs) and idx < len(tys):
             tx, ty = float(txs[idx]), float(tys[idx])
             t = tower_rect(cfg, (tx, ty))
-            # In the bounding box is fine where the outline leaves room for it.
-            on_model = overlaps(t, footprint) and (
-                (outline := plate_outline(Path(z.filename), number, (0.0, 0.0), 1.0) if z.filename else None) is None
-                or outline_hits(outline, t))
-            if on_model or not (area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]):
+            if not tower_clear(z, number, t, footprint, area):
                 warnings.append(f"{name}: the prime tower at {tx:.0f},{ty:.0f} (about {t[2] - t[0]:.0f} x {t[3] - t[1]:.0f} mm) "
                                 f"may touch the model or the bed's edge "
                                 f"-- slice it (--slice) and look")
     return info, problems, warnings, local
+
+
+def tower_clear(z: zipfile.ZipFile, number: int, t: tuple, footprint: tuple, area: tuple) -> bool:
+    """Whether tower footprint `t` stays on the bed and off plate `number`'s model.
+
+    In the model's bounding box is fine where its outline leaves room.
+    """
+    on_model = overlaps(t, footprint) and (
+        (outline := plate_outline(Path(z.filename), number, (0.0, 0.0), 1.0) if z.filename else None) is None
+        or outline_hits(outline, t))
+    return not on_model and area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]
+
+
+def owed_step(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> int | None:
+    """Which tower check 14 holds a tall file to: 0 the whole heavier tower, 1 the same on
+    the file's own ribs, 2 the slower tower alone; None for a file it doesn't apply to."""
+    tallest = max((hi[2] - lo[2] for b in boxes if b for _n, lo, hi in [b]), default=0.0)
+    rules = TALL_TOWER_MIN.get(slicer)
+    if cfg.get("enable_prime_tower") != "1" or tallest <= TALL_PRINT_MM or not rules:
+        return None
+    pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
+    area = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+    txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
+
+    def fits(step: tuple) -> bool:
+        heavy = {**cfg, **{key: f"{want:g}" for key, want, _c in step if key in cfg}}
+        return all(b and idx < len(txs) and idx < len(tys) and tower_clear(
+            z, b[0], tower_rect(heavy, (float(txs[idx]), float(tys[idx]))), (b[1][0], b[1][1], b[2][0], b[2][1]), area)
+            for idx, b in enumerate(boxes))
+
+    stock_ribs = tuple(t for t in rules if t[0] not in RIB_KEYS)
+    return next((i for i, step in enumerate((rules, stock_ribs)) if fits(step)), 2)
+
+
+def owed_step_of(f: Path, key: str) -> int | None:
+    """owed_step() for a written file made for printer `key`."""
+    with zipfile.ZipFile(f) as z:
+        cfg = json.loads(z.read("Metadata/project_settings.config").decode())
+        boxes = on_plates(z, cfg, PRINTERS[key].label)[3]
+        return owed_step(z, cfg, boxes, PRINTERS[key].slicer)
+
+
+def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple[list[str], list[str], list[str]]:
+    """Check 14: (info, problems, warnings) about a tall print's prime tower."""
+    step = owed_step(z, cfg, boxes, slicer)
+    if step is None:
+        return [], [], []
+    tallest = max((hi[2] - lo[2] for b in boxes if b for _n, lo, hi in [b]), default=0.0)
+    rules = TALL_TOWER_MIN[slicer]
+    owed = (rules, tuple(t for t in rules if t[0] not in RIB_KEYS), ())[step]
+    roomy, owed_keys = step == 0, {key for key, _w, _c in owed}
+    weak = []
+    for key, want, ceiling in rules:
+        if key not in cfg or not (key in owed_keys or ceiling):
+            continue  # not this slicer's setting, or no room for that part of the wider base: not owed
+        got = _num(cfg.get(key))
+        if got is None or (got > want if ceiling else got < want):
+            weak.append(f"{key} {cfg.get(key)!r} (want {'<=' if ceiling else '>='} {want:g})")
+    if weak:
+        return [], [f"{tallest:.0f} mm tall on the light prime tower: {', '.join(weak)} -- convert it again"], []
+    if roomy:
+        return [f"tower     : {tallest:.0f} mm tall, heavier prime tower set"], [], []
+    if owed:
+        return [f"tower     : {tallest:.0f} mm tall, heavier prime tower on its own ribs set (no room for longer ones)"], [], []
+    return [], [], [f"{tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower tower "
+                    f"only -- slice it and give the tower a bigger base if there's room"]
 
 
 def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], list[str]]:
@@ -427,6 +538,7 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
         ms = u1.model_settings(z)
         file_stamp = u1.stamp(z)
         bed_info, bed_problems, bed_warnings, boxes = on_plates(z, cfg, printer.label)
+        tall_info, tall_problems, tall_warnings = tall_tower(z, cfg, boxes, printer.slicer)
     pal = [c.upper() for c in cfg.get("filament_colour", [])]
     k = len(pal)
     painted = sum(codes.values())
@@ -436,7 +548,9 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
     info = [f"printer   : {cfg.get('printer_settings_id')} / {cfg.get('print_settings_id')}",
             f"filaments : {cfg.get('filament_settings_id')}",
             f"palette   : {pal}",
-            f"paint_color attrs: {painted:,}", *bed_info]
+            f"paint_color attrs: {painted:,}", *bed_info, *tall_info]
+    problems += tall_problems
+    warnings += tall_warnings
 
     # 1. white blob
     if pal and not [c for c in pal if rgba(c) not in WHITE]:
