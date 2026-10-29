@@ -36,8 +36,14 @@ With `--slice` (or `slicerbridge verify --slice`):
 1. Not a white blob (unsliced Bambu projects tricked earlier converters into 4 white filaments).
 2. The printer is the U1. 3. At most 4 filaments. 4. Paint present.
 5-8. Palette, extruder numbers, painted faces and paint leaves per filament, as above.
-9. Every printed vertex on its own U1 plate and under the max height.
+9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base (its brim and the
+   reach of its rib wall) may touch the model gets a warning.
 10. The version stamp is the U1 template's. 11. Size unchanged.
+12. A plate taller than 100 mm carries at least the heavier prime tower the engine gives tall prints: brim
+    10 mm, extra rib length 20 mm, rib width 12 mm, purge spacing 150%, tower speed 60 mm/s at most, rib wall.
+    Where that wider base wouldn't fit at the file's tower spot (it would touch the model or leave the bed), only
+    the slower tower is required, with a warning to slice it in Snapmaker Orca and look. The minimums are written
+    out in the check, not taken from the engine.
 
 ## prusa engine (Prusa printers)
 

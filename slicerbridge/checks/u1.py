@@ -45,6 +45,11 @@ And on its own, whatever the source:
      Snapmaker Orca 2.4.0.
  11. Size unchanged: each plate's printed parts measure the same as in the
      source, to 0.01 mm (width and depth swap if it was turned 90 degrees).
+ 12. A plate taller than TALL_PRINT_MM carries at least the heavier prime tower
+     the u1 engine gives tall prints (TALL_TOWER there). U1 users lost Gatefang's
+     tower (200 mm print) around layer 665 on a much lighter one. Where the heavier
+     base can't fit at the file's tower spot (it would touch the model's footprint
+     or leave the bed), only the slower tower is required, with a ⚠.
 
 Standard library only: the paint decoder here is written from the format, not
 borrowed from Panda2Prusa, so the conversion engine isn't checking itself.
@@ -68,6 +73,17 @@ PLATE_STRIDE = 1.2        # Bambu's PartPlate layout: plates one bed + a fifth o
 EPS = 1e-4
 TOWER_DEPTH_GUESS = 40.0  # mm; only the slicer knows
 
+# Check 12: a print taller than this needs at least the tower the u1 engine's
+# TALL_TOWER sets. Written out here on purpose, not imported from the engine.
+TALL_PRINT_MM = 100.0
+TALL_TOWER_MIN = (  # (setting, value, True if the value is a ceiling)
+    ("prime_tower_brim_width", 10.0, False),
+    ("wipe_tower_extra_rib_length", 20.0, False),
+    ("wipe_tower_rib_width", 12.0, False),
+    ("wipe_tower_extra_spacing", 150.0, False),
+    ("wipe_tower_max_purge_speed", 60.0, True),
+)
+
 CORE = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
 P_PATH = "{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}path"
 VERTEX_OR_OBJECT = re.compile(rb'<object\b[^>]*?\bid="(\d+)"|<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"')
@@ -75,6 +91,48 @@ VERTEX_OR_OBJECT = re.compile(rb'<object\b[^>]*?\bid="(\d+)"|<vertex x="([^"]+)"
 PAINT = re.compile(rb' paint_color="([0-9A-Fa-f]*)"')
 EXTRUDER = re.compile(r'key="extruder" value="(\d+)"')
 ANY_FILAMENT = re.compile(r'key="(?:extruder|[a-z_]+_filament)" value="(\d+)"')
+
+
+def _num(v) -> float | None:
+    """A config number, "150%" included; None if it isn't one."""
+    try:
+        return float(str(v).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        return None
+
+
+def rib_reach(cfg: dict) -> float:
+    """How far a rib wall reaches past the tower's sides at the base: about half the
+    extra rib length along each diagonal, plus half the rib width."""
+    if cfg.get("enable_prime_tower") != "1" or cfg.get("wipe_tower_wall_type") != "rib":
+        return 0.0
+    extra = _num(cfg.get("wipe_tower_extra_rib_length")) or 0.0
+    width = _num(cfg.get("wipe_tower_rib_width")) or 0.0
+    return max(0.0, (extra + width) / (2 * math.sqrt(2)))
+
+
+def heavy_base_fits(cfg: dict, boxes: list[tuple]) -> bool:
+    """Whether TALL_TOWER_MIN's wider base, at this file's tower spots, clears every
+    plate's model footprint and stays on its bed. The same box check 9 draws."""
+    pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
+    area = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+    heavy = dict(cfg)
+    for key, want, _ceiling in TALL_TOWER_MIN:
+        heavy[key] = f"{want:g}"
+    pad = (_num(heavy["prime_tower_brim_width"]) or 0.0) + rib_reach({**heavy, "wipe_tower_wall_type": "rib"})
+    tw = float(cfg.get("prime_tower_width") or 30)
+    txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
+    for idx, (number, a, b) in enumerate(boxes):
+        if idx >= len(txs) or idx >= len(tys) or a[0] == float("inf"):
+            return False
+        bx0, by0, bx1, by1 = plate_area(number - 1, len(boxes), area)
+        tx, ty = float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]
+        t = (tx - pad, ty - pad, tx + tw + pad, ty + TOWER_DEPTH_GUESS + pad)
+        if t[0] < bx0 - EPS or t[1] < by0 - EPS or t[2] > bx1 + EPS or t[3] > by1 + EPS:
+            return False
+        if t[0] < b[0] and t[2] > a[0] and t[1] < b[1] and t[3] > a[1]:
+            return False
+    return True
 
 
 def rgba(c: str) -> str:
@@ -273,6 +331,7 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
     tower = cfg.get("enable_prime_tower") == "1"
     tw, brim = float(cfg.get("prime_tower_width") or 30), float(cfg.get("prime_tower_brim_width") or 0)
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
+    pad = brim + rib_reach(cfg)
     for idx, (number, a, b) in enumerate(boxes):
         bx0, by0, bx1, by1 = plate_area(number - 1, len(boxes), area)
         label = f"plate {number}" if len(boxes) > 1 else "plate"
@@ -300,7 +359,7 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
                             f"z to {b[2]:.1f}; the bed is {bx1 - bx0:g} x {by1 - by0:g} x {height:g})")
         if tower and idx < len(txs) and idx < len(tys):
             tx, ty = float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]
-            t = (tx - brim, ty - brim, tx + tw + brim, ty + TOWER_DEPTH_GUESS + brim)
+            t = (tx - pad, ty - pad, tx + tw + pad, ty + TOWER_DEPTH_GUESS + pad)
             if t[0] < b[0] and t[2] > a[0] and t[1] < b[1] and t[3] > a[1]:
                 warnings.append(f"{label}: the prime tower at {float(txs[idx]):.0f},{float(tys[idx]):.0f} may touch "
                                 f"the model's footprint -- slice it in Snapmaker Orca and look")
@@ -374,6 +433,28 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
         file_stamp = stamp(z)
     info += bed_info + [f"⚠ {w}" for w in bed_warnings]
     problems += bed_problems
+
+    # 12. a tall print carries the heavier prime tower
+    tallest = max((b[2] - a[2] for _n, a, b in boxes if a[0] != float("inf")), default=0.0)
+    if cfg.get("enable_prime_tower") == "1" and tallest > TALL_PRINT_MM:
+        roomy = heavy_base_fits(cfg, boxes)
+        weak = []
+        if roomy and cfg.get("wipe_tower_wall_type") != "rib":
+            weak.append(f"wipe_tower_wall_type {cfg.get('wipe_tower_wall_type')!r} (want 'rib')")
+        for key, want, ceiling in TALL_TOWER_MIN:
+            if not (roomy or ceiling):
+                continue  # no room for the wider base: only the slower tower is owed
+            got = _num(cfg.get(key))
+            if got is None or (got > want if ceiling else got < want):
+                weak.append(f"{key} {cfg.get(key)!r} (want {'<=' if ceiling else '>='} {want:g})")
+        if weak:
+            problems.append(f"{tallest:.0f} mm tall on the light prime tower: {', '.join(weak)} -- "
+                            f"convert it again with slicerbridge")
+        elif roomy:
+            info.append(f"tower     : {tallest:.0f} mm tall, heavier prime tower set")
+        else:
+            info.append(f"⚠ {tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower "
+                        f"tower only -- slice it in Snapmaker Orca, and give the tower a bigger base if there's room")
 
     # 10. version stamp Snapmaker Orca will read
     wanted = template_stamps()
