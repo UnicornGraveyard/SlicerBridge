@@ -12,7 +12,8 @@ is never written. Its tools are on the `slicerbridge` MCP server.
 
 1. **First time in a session, run `doctor`.** It shows which slicers SlicerBridge finds. Files for a printer
    are built with that printer's slicer: OrcaSlicer 2.4.2 for Creality, Elegoo, Anycubic, Flashforge and
-   QIDI; Bambu Studio for Bambu Lab; PrusaSlicer for Prusa. The Snapmaker U1 needs none. If one the user
+   QIDI; Bambu Studio for Bambu Lab; PrusaSlicer for Prusa. The Snapmaker U1 needs none to convert, and
+   Snapmaker Orca to slice. If one the user
    needs is missing, say so and point them at the plugin's settings (`/plugin`, then **Configure**), where
    they can set where each slicer is installed.
 2. **Inspect before converting.** `inspect_model` shows the palette, the filament slots the model actually
@@ -24,10 +25,14 @@ is never written. Its tools are on the `slicerbridge` MCP server.
    printer: `Dragon - Creality K2 Plus - My Shop.3mf`). Files go to `out/<name>/` beside the
    model unless they give `out_dir`.
 4. **Report what came back**, printer by printer: what was written, what was refused and why, and every
-   warning. Don't summarize a refusal away.
+   warning. Don't summarize a refusal away. A print over 100 mm says which prime tower each file got: a
+   heavier one, the same on the printer's own ribs, or (with a ⚠) only a slower one because the bed has no
+   room. Pass the ⚠ on: that file is the one to slice and look at.
 5. **To prove the files print**, offer `verify_files` with slicing, or `convert_model` with `slice_first`.
    Each slice takes a minute or two per printer, so do a few printers at a time. `brand_check` slices
    Creality, Elegoo, Anycubic, Flashforge and QIDI files in those makers' own slicers, where installed.
+   A slice reports the print time, grams and the prime tower's share of the filament. If Snapmaker Orca's
+   command line crashes on a U1 file, the file is kept with a warning: suggest slicing it in the app.
 
 ## Rules
 

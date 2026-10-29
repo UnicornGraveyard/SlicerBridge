@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- SlicerBridge describes itself as a Rosetta Stone for multicolor 3MF files, in the README, the plugin, the
+  marketplace, the MCP Registry entry and the package summary. The README and docs cover what 0.4.0 added: the
+  tall-print tower, your print settings, and slicing the U1's file in Snapmaker Orca. The marketplace entry
+  said 30 printers; there are 34.
+
 ## 0.4.0 (2026-10-29)
 
 - Snapmaker U1: `--slice` slices its file in Snapmaker Orca, as the other printers' are sliced in theirs (check

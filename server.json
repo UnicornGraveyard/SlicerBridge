@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.UnicornGraveyard/slicerbridge",
   "title": "SlicerBridge",
-  "description": "Convert a multicolor 3MF project into a ready, checked file for every multicolor printer.",
+  "description": "A Rosetta Stone for multicolor 3MF files: one project in, a checked file for every printer out.",
   "repository": {
     "url": "https://github.com/UnicornGraveyard/SlicerBridge",
     "source": "github"

@@ -1,10 +1,12 @@
 # SlicerBridge for Claude
 
+A Rosetta Stone for multicolor 3MF files.
+
 Convert a multicolor 3MF project, saved by Bambu Studio, OrcaSlicer or a printer maker's own fork of either,
 into a ready, checked file for each of 34 multicolor printers: Bambu Lab, Creality, Elegoo, Anycubic,
 Flashforge, QIDI, WonderMaker, Prusa and the Snapmaker U1. Each file is named for its printer, keeps the colors where they
-were painted, carries that printer's own settings, and keeps its size. A file that fails a check is never
-written.
+were painted, carries that printer's own settings and your print settings, keeps its size, and gets a
+heavier prime tower when it's tall. A file that fails a check is never written.
 
 This plugin gives Claude SlicerBridge's tools and a skill for using them: inspect a model, convert it for the
 printers you name, re-check or slice the files, and slice them in each maker's own slicer.
@@ -15,7 +17,8 @@ printers you name, re-check or slice the files, and slice them in each maker's o
 - [uv](https://github.com/astral-sh/uv#installation), which runs the server
 - The slicers for the printers you want: OrcaSlicer 2.4.2 (Creality, Elegoo, Anycubic, Flashforge, QIDI,
   WonderMaker),
-  Bambu Studio (Bambu Lab), PrusaSlicer (Prusa). The Snapmaker U1 needs none.
+  Bambu Studio (Bambu Lab), PrusaSlicer (Prusa). The Snapmaker U1 needs none to convert; Snapmaker Orca
+  slices its file when you ask.
 
 SlicerBridge looks for each slicer in `/Applications`. If yours is elsewhere, set its location in the
 plugin's settings: `/plugin`, select SlicerBridge, **Configure**. Leave a setting empty to use

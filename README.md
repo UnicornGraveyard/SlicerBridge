@@ -1,6 +1,7 @@
 # SlicerBridge
 
-**Any multicolor 3MF project in. A ready, checked file for every multicolor printer out.**
+**A Rosetta Stone for multicolor 3MF files. Any multicolor project in, a ready, checked file for every
+multicolor printer out.**
 
 <!-- mcp-name: io.github.UnicornGraveyard/slicerbridge -->
 
@@ -12,6 +13,10 @@ You paint a multicolor model in one slicer. The people who print it own a Bambu 
 Elegoo Centauri Carbon, a QIDI Q2, a Prusa XL, a Snapmaker U1… and each of them has to retarget your project to
 their printer by hand, guessing at presets, and often losing the colors on the way.
 
+Every slicer and printer speaks its own dialect of the same 3MF format. SlicerBridge is the translator: it reads
+your project once and writes it out in each printer's dialect without losing its meaning: the colors, the size,
+and the way you set it up to print.
+
 SlicerBridge takes the project from whichever slicer you made it in (Bambu Studio, OrcaSlicer, or a printer
 maker's own fork of either) and writes one file for each of 34 printers, named for that printer
 (`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Its files for Bambu Lab,
@@ -21,11 +26,16 @@ OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every
   painted triangle is re-encoded to match.
 - **carries that printer's own settings**, written by its own slicer, and that printer's filament presets. Your
   print settings (layer height, walls, infill, supports, brim, ironing and the rest that shape the print) come
-  along where the printer has the same setting, whether or not your project marks them as changed.
+  along where the printer has the same setting, whether or not your project marks them as changed. A value the
+  printer's slicer won't take keeps the printer's own, and the output says so.
+- **gets a prime tower built for its height.** A print taller than 100 mm gets a heavier tower (a wider brim,
+  longer and wider ribs, wider purge spacing, a slower tower), so a tall, thin tower doesn't get knocked over
+  partway up. Each file gets the heaviest one its bed has room for, and the output says which.
 - **keeps its size.** Nothing is ever scaled. A model bigger than a bed gets a warning with the scale that fits.
-- **is checked before it's written**: colors, paint, plates, size and settings, and optionally sliced in that
-  printer's slicer to prove automatic color changes and a prime tower clear of the model. A file that fails a
-  check is never written.
+- **is checked before it's written**: colors, paint, plates, size, settings and the tall-print tower. With
+  `--slice` it's also sliced in that printer's slicer (Snapmaker Orca for the U1), proving automatic color
+  changes and a prime tower clear of the model, and reporting the print time, the grams and the prime tower's
+  share of the filament. A file that fails a check is never written.
 
 ## What goes in
 
@@ -165,7 +175,8 @@ set of checks:
   with room for the prime tower.
 - **prusa**: Prusa multi-material printers, written by [Panda2Prusa](https://github.com/liutang/Panda2Prusa) as
   PrusaSlicer projects, one per plate.
-- **u1**: the Snapmaker U1, with [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates.
+- **u1**: the Snapmaker U1, with [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates. With `--slice`,
+  Snapmaker Orca slices the file.
 
 [docs/how-it-works.md](docs/how-it-works.md) explains each step; [docs/checks.md](docs/checks.md) lists every check.
 
