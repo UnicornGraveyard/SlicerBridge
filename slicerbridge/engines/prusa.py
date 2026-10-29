@@ -45,10 +45,11 @@ import lxml.etree as ET
 
 from .._vendor.panda2prusa import ns
 from .._vendor.panda2prusa.convert import describe, used_filaments
-from .._vendor.panda2prusa.settings import Warnings, translate
+from .._vendor.panda2prusa.settings import ENUMS, PATTERNS, RENAMED, Warnings, translate
 from .._vendor.panda2prusa.transform import Transform
 from .._vendor.panda2prusa.writer import write_prusa_3mf
 
+from ..carry import marked_changed, print_keys
 from ..errors import Refusal
 from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name, run_slicer
 
@@ -63,15 +64,29 @@ USER_DATADIR = {"darwin": Path("~/Library/Application Support/PrusaSlicer"),
 
 FILAMENT_TYPES = {"PLA"}  # Bambu filament_type values the filament preset stands for
 
-# Print settings carried over from the Bambu project onto the Prusa print profile,
-# on top of whatever the project marks as changed from its system preset. Everything
-# goes through Panda2Prusa's own translator; what it can't translate is reported.
-PRINT_KEYS = (
-    "layer_height", "wall_loops", "top_shell_layers", "bottom_shell_layers",
-    "sparse_infill_density", "sparse_infill_pattern", "seam_position",
-    "enable_support", "support_type", "support_style", "support_threshold_angle",
-    "support_on_build_plate_only",
-)
+# Print settings carried over from the Bambu project onto the Prusa print profile
+# (carry.py): every one Panda2Prusa's translator has a PrusaSlicer setting for, and
+# whatever the project marks as changed from its preset, which is reported when it
+# can't be translated.
+TRANSLATED_APART = {"support_type", "support_style", "ironing_type", "brim_type",
+                    "support_bottom_z_distance", "seam_slope_start_height"}
+
+
+def translatable(key: str) -> bool:
+    return key in RENAMED or key in PATTERNS or key in ENUMS or key in TRANSLATED_APART
+
+
+def translates(key: str, value: str) -> bool:
+    """Whether an unmarked setting's value becomes a PrusaSlicer one, or at least says why not.
+
+    A value with nothing to become (Bambu's support_base_pattern "default", a scarf
+    start height in mm) is left out, not reported: the designer didn't mark it.
+    """
+    w = Warnings()
+    try:
+        return bool(translate({key: value}, "project", w, True)) or not w.lines()
+    except ValueError:  # a number translate() can't read, e.g. support_bottom_z_distance "nil"
+        return False
 
 # Bambu part subtypes -> PrusaSlicer volume types (the 3MF names on both sides).
 VOLUME_TYPES = {
@@ -297,15 +312,19 @@ def load_source(slug: str, display: str, path: Path) -> Source:
                         if p[i] > hi[i]:
                             hi[i] = p[i]
 
-    diff = ps.get("different_settings_to_system") or [""]
-    keys = list(PRINT_KEYS) + [k for k in str(diff[0]).split(";") if k and k not in PRINT_KEYS]
+    marked = marked_changed(ps)
     print_settings = {}
-    for k in keys:
+    for k in print_keys(ps):
+        if k not in marked and not translatable(k):
+            continue
         v = ps.get(k)
         if isinstance(v, list):
             v = v[0] if v else None
-        if v is not None:
-            print_settings[k] = str(v)
+        if v is None:
+            continue
+        v = str(v)
+        if k in marked or translates(k, v):
+            print_settings[k] = v
 
     return Source(slug, display, path, project, palette, types, used,
                   [plates[n] for n in numbers], print_settings)
@@ -475,8 +494,11 @@ def load_profile(key: str) -> Profile:
     return prof
 
 
-def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer) -> tuple[str, list]:
-    """Slic3r_PE.config text: the Prusa profile, the model's colors, and its print settings."""
+def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer,
+                 refused: Optional[dict] = None) -> tuple[str, list, set]:
+    """(Slic3r_PE.config text, notes, the keys carried from the source): the Prusa profile, the
+    model's colors, and its print settings, less the `refused` ones ({key: why}), which keep the profile's."""
+    refused = refused or {}
     values = dict(prof.values)
     notes = []
 
@@ -493,15 +515,36 @@ def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer) ->
     first = src.project.project_settings.get("initial_layer_print_height")
     if first:
         translated["first_layer_height"] = str(first)
+    carried = set()
     for k, v in translated.items():
         if k not in values:
             notes.append(f"{k} = {v} is not a {printer.preset} setting, left out")
             continue
+        if k in refused:
+            notes.append(f"not carried over: {k} = {v}: {refused[k]}, the profile's {values[k]} kept")
+            continue
         values[k] = v
+        carried.add(k)
     notes += [f"not carried over: {w}" for w in warnings.lines()]
 
     body = "".join(f"; {k} = {values[k]}\n" for k, _ in prof.items if k != "compatible_printers")
-    return f"; {prof.header}\n\n{body}", notes
+    return f"; {prof.header}\n\n{body}", notes, carried
+
+
+# What PrusaSlicer names when it won't load a value (check 9's detail).
+REFUSED_VALUE = re.compile(r"Value out of range: (\w+)|Invalid value provided for parameter (\w+)")
+
+
+def refused_key(checks: list, carried: set) -> Optional[str]:
+    """The carried setting PrusaSlicer refused to load, if that is why check 9 failed."""
+    for c in checks:
+        if c.n == "9" and not c.ok:
+            log = c.value if isinstance(c.value, str) else c.detail
+            for m in REFUSED_VALUE.finditer(log):
+                k = m.group(1) or m.group(2)
+                if k in carried:
+                    return k
+    return None
 
 
 # ------------------------------------------------------------ placement ----
@@ -920,7 +963,8 @@ def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: S
     err = (r.stderr.strip().splitlines() or [""])[-1][:120]
     return Check("9", "PrusaSlicer --info loads it", ok,
                  f"exit {r.returncode}, facets {facets:,} (want {model_tris:,}), manifold {','.join(manifold)}, "
-                 f"reloaded {nt} tools, colors {'ok' if colors_ok else 'WRONG'}" + (f"  {err}" if r.returncode else ""))
+                 f"reloaded {nt} tools, colors {'ok' if colors_ok else 'WRONG'}" + (f"  {err}" if r.returncode else ""),
+                 r.stderr)  # all of it: refused_key looks for the setting PrusaSlicer names
 
 
 def slice_check(out: Path, ps: str) -> Check:
@@ -998,7 +1042,9 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
             if (OUT / n).exists() and ours(OUT / n):
                 (OUT / n).unlink()
         raise
-    config, notes = build_config(prof, src, mapping, printer)
+    # A carried value PrusaSlicer won't load (Bambu's -1 for "auto", say) keeps the profile's.
+    refused: dict = {}
+    config, notes, carried = build_config(prof, src, mapping, printer, refused)
 
     OUT.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -1008,25 +1054,32 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         tmp = OUT / f"partial - {name}"
         center, tower = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1))
         apply_placement(plate, pl, bed, center)
-        try:
-            stats = write_prusa_3mf(src.project, str(tmp),
-                                    plates=[plate.number] if plate.number is not None else None,
-                                    extruder_map=mapping)
-        except ValueError as e:  # Panda2Prusa refusing the --map (e.g. two filaments on one tool)
-            tmp.unlink(missing_ok=True)
-            raise Refusal(f"REFUSING {src.slug}: Panda2Prusa rejected the mapping: {e}")
-        if stats.objects_written == 0:
-            tmp.unlink(missing_ok=True)
-            raise Refusal(f"{src.slug}: Panda2Prusa wrote no objects for plate {plate.number}")
-        with zipfile.ZipFile(tmp, "a", compression=zipfile.ZIP_DEFLATED) as z:
-            z.comment = STAMP
-            z.writestr("Metadata/Slic3r_PE.config", config)
-            if tower:
-                z.writestr("Metadata/Prusa_Slicer_wipe_tower_information.xml",
-                           '<?xml version="1.0" encoding="utf-8"?>\n<wipe_tower_information bed_idx="0" '
-                           f'position_x="{tower[0]:.2f}" position_y="{tower[1]:.2f}" rotation_deg="0"/>\n')
+        while True:
+            try:
+                stats = write_prusa_3mf(src.project, str(tmp),
+                                        plates=[plate.number] if plate.number is not None else None,
+                                        extruder_map=mapping)
+            except ValueError as e:  # Panda2Prusa refusing the --map (e.g. two filaments on one tool)
+                tmp.unlink(missing_ok=True)
+                raise Refusal(f"REFUSING {src.slug}: Panda2Prusa rejected the mapping: {e}")
+            if stats.objects_written == 0:
+                tmp.unlink(missing_ok=True)
+                raise Refusal(f"{src.slug}: Panda2Prusa wrote no objects for plate {plate.number}")
+            with zipfile.ZipFile(tmp, "a", compression=zipfile.ZIP_DEFLATED) as z:
+                z.comment = STAMP
+                z.writestr("Metadata/Slic3r_PE.config", config)
+                if tower:
+                    z.writestr("Metadata/Prusa_Slicer_wipe_tower_information.xml",
+                               '<?xml version="1.0" encoding="utf-8"?>\n<wipe_tower_information bed_idx="0" '
+                               f'position_x="{tower[0]:.2f}" position_y="{tower[1]:.2f}" rotation_deg="0"/>\n')
 
-        checks = verify(tmp, src, plate, mapping, printer, prof, ps, slice_it, pl)
+            checks = verify(tmp, src, plate, mapping, printer, prof, ps, slice_it, pl)
+            k = refused_key(checks, carried)
+            if k is None:
+                break
+            refused[k] = "PrusaSlicer won't load it"
+            config, notes, carried = build_config(prof, src, mapping, printer, refused)
+            tmp.unlink(missing_ok=True)
         ok = all(c.ok for c in checks)
         where = f"plate {plate.number}" if multi else ""
         turned = ", turned 90 deg" if pl.rotated else ""

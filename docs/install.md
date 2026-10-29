@@ -54,6 +54,10 @@ On Windows (PowerShell), for every new terminal:
 
 `slicerbridge doctor` shows what it found and warns about an older OrcaSlicer.
 
+On a Mac with [Homebrew](https://brew.sh), a missing OrcaSlicer is installed the first time SlicerBridge needs it
+(`brew install --cask orcaslicer`, into `/Applications`). That's Homebrew's current OrcaSlicer, which may be newer
+than 2.4.2. It isn't done while `SLICERBRIDGE_ORCASLICER` is set: a path you chose is yours to fill.
+
 ### Brand slicers (optional)
 
 `slicerbridge brand-check` slices each file in the slicer its printer's maker ships. It looks for them in

@@ -43,6 +43,7 @@ from .._vendor.panda2prusa.convert import describe, used_filaments
 from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
+from ..carry import carry_print_settings
 from ..checks import u1 as u1check
 from ..errors import Refusal
 from ..printers import LEGACY_STAMPS, STAMP, U1_LABEL, out_path as named_path
@@ -441,11 +442,13 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     if not src.exists():
         raise Refusal(f"no such file: {src}")
 
-    # ---- template: mirror bl2u1's support detection --------------------
+    # ---- template: with supports if the source prints them ---------------
+    # By the source's own value: bl2u1 looked for enable_support among the settings
+    # it marks as changed, which a preset with no system parent never marks, and
+    # which turning supports off marks too.
     with zipfile.ZipFile(src) as z:
         orig = json.loads(z.read("Metadata/project_settings.config").decode())
-    diff = orig.get("different_settings_to_system", [])
-    has_support = any(isinstance(s, str) and "enable_support" in s for s in diff)
+    has_support = str(orig.get("enable_support", "0")) == "1"
     u1 = load_template(has_support)
     application, client_version = template_stamp(has_support)
     bed = Bed.of(u1)
@@ -536,8 +539,14 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         root_model = re.sub(r'(<metadata name="Application">)[^<]*(</metadata>)',
                             lambda m: m.group(1) + application + m.group(2), root_model).encode()
 
-        # ---- project_settings.config: U1 profile + our palette ----------
+        # ---- project_settings.config: U1 profile + the designer's print settings + our palette
         combined = u1.copy()
+        carried, _ = carry_print_settings(orig, u1)
+        combined.update(carried)
+        if carried:  # marked as the project's own, as Snapmaker Orca marks a changed setting
+            marked = list(combined.get("different_settings_to_system") or [""] * (TARGET_FILAMENTS + 2))
+            marked[0] = ";".join(sorted({k for k in str(marked[0]).split(";") if k} | set(carried)))
+            combined["different_settings_to_system"] = marked
         colors, types = [], []
         for f in ordered:
             c = f["color"]

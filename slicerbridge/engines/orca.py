@@ -15,8 +15,9 @@ OrcaSlicer, and read the Bambu .3mf format:
   each type (templates.py); a file's settings are those, one filament column
   per color, the bed type the app would pick, and the source's own flush volumes
   for its colors. Then the print settings the designer chose in their slicer
-  (supports, infill, walls, layer height -- everything the source marks as
-  changed) are carried over where the target has the same setting, and the
+  (supports, infill, walls, layer height and the rest that shape the print,
+  and everything the source marks as changed: carry.py) are carried over where
+  the target has the same setting, and the
   slicer reads the whole result back: a value it doesn't take keeps the
   printer's, and is named in the output.
 - Size: never changed. Each plate moves onto its own plate of the printer's bed
@@ -51,6 +52,7 @@ from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
 from .. import templates as templates_build
+from ..carry import carry_print_settings
 from ..checks import orca as verify
 from ..errors import Refusal
 from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
@@ -70,16 +72,6 @@ BAMBU_LEFTOVERS = verify.BAMBU_LEFTOVERS
 PLATE_STRIDE = 1.2
 EPS = 1e-4                 # mm of tolerance on bed edges
 
-# Print settings carried from the Bambu project whatever it marks as changed --
-# the ones that shape the print -- on top of everything it does mark as changed.
-CARRY = ("layer_height", "wall_loops", "top_shell_layers", "bottom_shell_layers",
-         "sparse_infill_density", "sparse_infill_pattern", "seam_position",
-         "enable_support", "support_type", "support_style", "support_threshold_angle",
-         "support_on_build_plate_only")
-# Never carried: the printer's own business (its prime tower, purging, the
-# timelapse moves a Bambu camera wants), and filament numbers, handled apart.
-NEVER_CARRY = re.compile(r"^(prime_tower_|wipe_tower_|flush_volumes_|flush_multiplier$|timelapse_|"
-                         r"enable_prime_tower$|.*_filament$)")
 # Settings OrcaSlicer fills in or keeps per plate when it saves: not ours to compare.
 READ_BACK_IGNORED = {"upward_compatible_machine", "wipe_tower_x", "wipe_tower_y"}
 # Preset values a slicer itself can't slice: OrcaSlicer 2.4.2's seam placer loops forever
@@ -87,6 +79,8 @@ READ_BACK_IGNORED = {"upward_compatible_machine", "wipe_tower_x", "wipe_tower_y"
 # SeamPlacer::place_seam, and slices in 52 s with it off). It only offsets where the
 # inner walls' seams line up, so off is safe.
 SLICER_WORKAROUNDS = {"staggered_inner_seams": "0"}
+# Bambu Studio's names for values OrcaSlicer reads back under another: carried under OrcaSlicer's.
+ORCA_NAMES = {("ironing_pattern", "zig-zag"): "rectilinear", ("support_ironing_pattern", "zig-zag"): "rectilinear"}
 # Settings the slicer recomputes for its own machine on load: what it reads back is written.
 SLICER_OWNED = {"flush_volumes_matrix", "flush_volumes_vector", "flush_multiplier"}
 # What a brand's own slicer reads differently from OrcaSlicer (brandcheck.py slices
@@ -567,22 +561,10 @@ def flush_matrix(src_cfg: dict, used: list[int], base: dict) -> list[str]:
     return [off if i != j else "0" for i in range(k) for j in range(k)]
 
 
-def carry_print_settings(src_cfg: dict, base: dict) -> tuple[dict, dict]:
-    """({key: the source's value} to carry, {key: why not}) for the print settings the designer chose."""
-    diff = src_cfg.get("different_settings_to_system") or [""]
-    changed = {k for k in str(diff[0]).split(";") if k}
-    carried, skipped = {}, {}
-    for k in sorted(set(CARRY) | changed):
-        if NEVER_CARRY.match(k) or k not in src_cfg:
-            continue
-        v = src_cfg[k]
-        if k not in base:
-            skipped[k] = "not an OrcaSlicer setting"
-        elif type(v) is not type(base[k]) or (isinstance(v, list) and len(v) != len(base[k])):
-            skipped[k] = f"Bambu Studio keeps it per nozzle ({v})"
-        elif v != base[k]:
-            carried[k] = v
-    return carried, skipped
+def in_orcaslicer_terms(carried: dict, base: dict) -> dict:
+    """The carried settings with each value OrcaSlicer names differently under its name (ORCA_NAMES)."""
+    named = {k: ORCA_NAMES.get((k, v), v) for k, v in carried.items()}
+    return {k: v for k, v in named.items() if v != base.get(k)}
 
 
 def absolute_line_widths(s: dict) -> set:
@@ -804,10 +786,13 @@ def settle(key: str, settings: dict, carried: dict, base: dict) -> tuple[dict, d
                 elif k == "different_settings_to_system":
                     continue  # follows the carried keys; settled with them
                 elif k in SLICER_OWNED or (isinstance(settings.get(k), list) and isinstance(back.get(k), list)
-                                           and back[k][:len(settings[k])] == settings[k]):
+                                           and back[k][:len(settings[k])] == settings[k]) or (
+                        isinstance(settings.get(k), str) and isinstance(back.get(k), str)
+                        and "".join(settings[k].split()) == "".join(back[k].split())):
                     # The slicer pads a list to its own length when it loads one, and on a
                     # toolchanger keeps its own flush volumes per head (the Creator 5's come
-                    # back 111 mm3 lower, in four blocks). Write what it would.
+                    # back 111 mm3 lower, in four blocks), and respaces a text value (the ZR Ultra S's
+                    # thumbnails come back "48x48/PNG, 300x300/PNG"). Write what it would.
                     settings[k] = back[k]
                     continue
                 else:
@@ -915,6 +900,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         raise Refusal(f"no Application stamp in the {key} template -- run slicerbridge templates --refresh")
 
     carried, skipped = carry_print_settings(m.src_cfg, base)
+    if printer.slicer == "orca":
+        carried = in_orcaslicer_terms(carried, base)
     # The prime tower's likely size, from the settings the file will have.
     likely = {**base, **carried, "filament_colour": [f["color"] for f in m.ordered],
               "flush_volumes_matrix": flush_matrix(m.src_cfg, m.used, base)}
@@ -1033,7 +1020,7 @@ def inspect(src: Path, keys: list[str]) -> list[str]:
     beds = {}
     for k in keys:
         try:
-            beds[k] = Bed.of(templates_build.load(k)[1]["PLA"])
+            beds[k] = Bed.of(templates_build.load(k, install=False)[1]["PLA"])  # inspecting installs nothing
         except Refusal as e:
             lines.append(f"    {PRINTERS[k].label}: no template ({str(e).splitlines()[0]})")
     for p in plates:
