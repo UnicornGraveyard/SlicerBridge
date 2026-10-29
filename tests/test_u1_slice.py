@@ -33,6 +33,9 @@ def snapmaker(tmp_path, monkeypatch):
         runs.append([str(c) for c in cmd])
         if fake.fails:
             return check.subprocess.CompletedProcess(cmd, 1, "", "[error] Nothing to be sliced")
+        if fake.crashes:
+            return check.subprocess.CompletedProcess(cmd, -11, "", "[error] calc_exclude_triangles:Unable to "
+                                                     "create exclude triangles")
         out = cmd[cmd.index("--outputdir") + 1]
         with zipfile.ZipFile(cmd[-1]) as z:
             cfg = json.loads(z.read("Metadata/project_settings.config"))
@@ -45,7 +48,7 @@ def snapmaker(tmp_path, monkeypatch):
         return check.subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(check, "run_slicer", run)
-    fake = type("Fake", (), {"runs": runs, "fails": False, "refuses": {}, "app": app})
+    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "app": app})
     return fake
 
 
@@ -121,3 +124,14 @@ def test_a_setting_snapmaker_orca_wont_load_keeps_the_templates_and_slices(tmp_p
     assert "brim_width" not in s["different_settings_to_system"][0].split(";")
     out = capsys.readouterr().out
     assert "kept the U1's own brim_width" in out and "Snapmaker Orca won't take 6" in out
+
+
+def test_a_crash_in_snapmaker_orcas_command_line_keeps_the_file(project, tmp_path, snapmaker, capsys):
+    """Snapmaker Orca 2.4.0's command line crashed on Gatefang's U1 file; its app sliced it."""
+    snapmaker.crashes = True
+    assert engine.convert(project, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
+    assert len(snapmaker.runs) == 2  # check 13 gives a crash a second try
+    out = capsys.readouterr().out
+    assert "⚠ not sliced: Snapmaker Orca's command line crashed on it (exit -11), twice" in out
+    assert out.count("crashed") == 1  # one warning, not check 13's "was run again" as well
+    assert (tmp_path / "out" / "Cube" / "Cube - Snapmaker U1.3mf").exists()

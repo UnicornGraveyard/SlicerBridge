@@ -5,7 +5,9 @@
 - Snapmaker U1: `--slice` slices its file in Snapmaker Orca, as the other printers' are sliced in theirs (check
   13), and a file that won't slice isn't written. On a Mac with Homebrew a missing Snapmaker Orca is installed
   (`brew install --cask snapmaker-orca`); without it the file is written unsliced, with a warning.
-  `SLICERBRIDGE_SNAPMAKER_ORCA` says where it is. `verify --slice` slices U1 files too.
+  `SLICERBRIDGE_SNAPMAKER_ORCA` says where it is. `verify --slice` slices U1 files too. A crash in Snapmaker
+  Orca's command line (2.4.0's crashed on Gatefang, which its app slices) keeps the file, with a warning to
+  slice it in the app; a file it refuses is still not written.
 - A slice says the slicer's time and grams, and the prime tower's share of the filament laid.
 - Snapmaker U1: a carried setting at -1 (Bambu Studio's auto) keeps the template's value where the template has
   one of its own: some Snapmaker Orca versions won't load the file otherwise ("raft_first_layer_expansion: -1 not

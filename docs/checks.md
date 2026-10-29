@@ -58,7 +58,8 @@ And whatever the source:
 
 With `--slice`, check 13 as above, in Snapmaker Orca. Its command line refuses every project as newer than itself,
 its own included, so it's given `--allow-newer-file`. Without Snapmaker Orca the file is still written, unsliced,
-with a warning.
+with a warning. So is a file its command line crashes on, twice: its app slices files the command line crashes on
+(Snapmaker Orca 2.4.0 on Gatefang). A file it refuses is not written.
 
 ## prusa engine (Prusa printers)
 
