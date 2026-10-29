@@ -4,6 +4,7 @@ import zipfile
 
 import pytest
 
+from builders import bambu_project
 from slicerbridge import printers
 from slicerbridge.checks import orca as check
 from slicerbridge.engines import u1 as engine
@@ -35,12 +36,16 @@ def snapmaker(tmp_path, monkeypatch):
         out = cmd[cmd.index("--outputdir") + 1]
         with zipfile.ZipFile(cmd[-1]) as z:
             cfg = json.loads(z.read("Metadata/project_settings.config"))
+        wont = [f"{k}: {v} not in range [0,5]" for k, v in fake.refuses.items() if cfg.get(k) == v]
+        if wont:  # as Snapmaker Orca says it
+            return check.subprocess.CompletedProcess(cmd, 238, "", "run found error, exit\nParam values in "
+                                                     "3mf/config error: \n" + "\n".join(wont))
         for n, (x, y) in enumerate(zip(cfg["wipe_tower_x"], cfg["wipe_tower_y"]), start=1):
             (check.Path(out) / f"plate_{n}.gcode").write_text(_gcode((float(x), float(y))))
         return check.subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(check, "run_slicer", run)
-    fake = type("Fake", (), {"runs": runs, "fails": False, "app": app})
+    fake = type("Fake", (), {"runs": runs, "fails": False, "refuses": {}, "app": app})
     return fake
 
 
@@ -87,3 +92,32 @@ def test_snapmaker_orca_is_found_where_it_installs():
     mac = printers.Slicer(s.name, check.Path("/Applications/Snapmaker Orca.app"), exe=s.exe)
     assert mac.binary.as_posix() == "/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca"
     assert printers.env_var(s) == "SLICERBRIDGE_SNAPMAKER_ORCA"
+
+
+def _u1_settings(tmp_path):
+    with zipfile.ZipFile(tmp_path / "out" / "Cube" / "Cube - Snapmaker U1.3mf") as z:
+        return json.loads(z.read("Metadata/project_settings.config"))
+
+
+def test_bambu_studios_auto_keeps_the_u1s_own_value(tmp_path, capsys):
+    """Some Snapmaker Orca versions won't load -1 for these, Bambu Studio's auto: Gatefang's did."""
+    src = bambu_project(tmp_path / "auto.3mf", extra_settings={
+        "raft_first_layer_expansion": "-1", "tree_support_wall_count": "-1", "brim_width": "6"})
+    assert engine.convert(src, "Cube", ["u1"], tmp_path / "out") == (1, 0)
+    s, t = _u1_settings(tmp_path), engine.load_template(False)
+    assert (s["raft_first_layer_expansion"], s["tree_support_wall_count"]) == (
+        t["raft_first_layer_expansion"], t["tree_support_wall_count"])
+    assert s["brim_width"] == "6"  # the rest is carried
+    assert "kept the U1's own raft_first_layer_expansion" in capsys.readouterr().out
+
+
+def test_a_setting_snapmaker_orca_wont_load_keeps_the_templates_and_slices(tmp_path, snapmaker, capsys):
+    src = bambu_project(tmp_path / "wide.3mf", extra_settings={"brim_width": "6", "wall_loops": "4"})
+    snapmaker.refuses = {"brim_width": "6"}
+    assert engine.convert(src, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
+    assert len(snapmaker.runs) == 2  # refused, then sliced without it
+    s = _u1_settings(tmp_path)
+    assert s["brim_width"] == engine.load_template(False)["brim_width"] and s["wall_loops"] == "4"
+    assert "brim_width" not in s["different_settings_to_system"][0].split(";")
+    out = capsys.readouterr().out
+    assert "kept the U1's own brim_width" in out and "Snapmaker Orca won't take 6" in out

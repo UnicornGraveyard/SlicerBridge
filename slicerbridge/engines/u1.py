@@ -490,6 +490,30 @@ def unhide(path: Path) -> None:
         os.chflags(path, flags & ~stat.UF_HIDDEN)
 
 
+# Bambu Studio's "auto" for some settings is -1, where some Snapmaker Orca versions start
+# the range at 0 and won't load the file ("raft_first_layer_expansion: -1 not in range
+# [0,2147483647]", "tree_support_wall_count: -1 not in range [0,2]": Gatefang, 2026-10-29).
+# A carried -1 where the template has a value of its own keeps the template's.
+AUTO = "-1"
+OUT_OF_RANGE = re.compile(r"(\w+): (\S+) not in range")
+
+
+class SettingsRefused(Refusal):
+    """Snapmaker Orca won't load these carried settings ({key: why}): write the file again without them."""
+
+    def __init__(self, refused: dict):
+        super().__init__("Snapmaker Orca won't load " + ", ".join(refused))
+        self.refused = refused
+
+
+def not_carried(carried: dict, u1: dict, refused: dict) -> dict:
+    """{key: why} for the carried settings the U1 keeps its template's value of instead."""
+    kept = {k: "Bambu Studio's auto, -1, which not every Snapmaker Orca takes" for k, v in carried.items()
+            if all(x == AUTO for x in (v if isinstance(v, list) else [v])) and u1.get(k) != v}
+    kept.update({k: why for k, why in refused.items() if k in carried})
+    return kept
+
+
 def slice_check(f: Path) -> tuple[list[str], list[str], list[str]]:
     """(info, problems, warnings) from slicing `f` in Snapmaker Orca: checks/orca.py's check 13.
 
@@ -504,9 +528,11 @@ def slice_check(f: Path) -> tuple[list[str], list[str], list[str]]:
 
 
 def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "",
-          slice_it: bool = False) -> Path:
+          slice_it: bool = False, refused: Optional[dict] = None) -> Path:
     """Write `slug`'s U1 file into out/<slug>/ and return it; `slug` is the model's display name.
-    `slice_it`: slice it in Snapmaker Orca first, and refuse it if it won't slice."""
+    `slice_it`: slice it in Snapmaker Orca first, and refuse it if it won't slice. `refused`:
+    carried settings ({key: why}) Snapmaker Orca wouldn't load, which keep the template's."""
+    refused = refused or {}
     if not src.exists():
         raise Refusal(f"no such file: {src}")
 
@@ -619,6 +645,8 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         # ---- project_settings.config: U1 profile + the designer's print settings + our palette
         combined = u1.copy()
         carried, _ = carry_print_settings(orig, u1)
+        kept = not_carried(carried, u1, refused)
+        carried = {k: v for k, v in carried.items() if k not in kept}
         combined.update(carried)
         if carried:  # marked as the project's own, as Snapmaker Orca marks a changed setting
             marked = list(combined.get("different_settings_to_system") or [""] * (TARGET_FILAMENTS + 2))
@@ -684,6 +712,11 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         sliced, problems, slice_warnings = slice_check(tmp)
     if problems:
         tmp.unlink()
+        # A carried value this Snapmaker Orca won't load: written again with the template's.
+        wont = {k: f"Snapmaker Orca won't take {v}" for line in problems
+                for k, v in OUT_OF_RANGE.findall(line) if k in carried}
+        if wont:
+            raise SettingsRefused(wont)
         if out_path.exists() and ours(out_path):
             out_path.unlink()
         raise Refusal(f"{slug} for the {U1_LABEL} failed its checks:\n" + "\n".join(f"   {p}" for p in problems))
@@ -710,6 +743,8 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
           + ("  sliced" if sliced else ""))
     for line in sliced:
         print(f"       {line.split(': ', 1)[-1]}")
+    if kept:
+        print("       kept the U1's own " + "; ".join(f"{tall.describe({k: u1[k]})} ({why})" for k, why in kept.items()))
     for w in slice_warnings:
         print(f"       ⚠ {w}")
     if tower_extra:
@@ -756,8 +791,14 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
             suffix: str = "") -> tuple[int, int]:
     """Write `name`'s U1 file into out/<name>/; returns (written, refused or failed).
     `slice_it`: slice it in Snapmaker Orca first."""
+    refused: dict = {}
     try:
-        write(src, name, load_u1_profiles(), out, prefix, suffix, slice_it)
+        while True:
+            try:
+                write(src, name, load_u1_profiles(), out, prefix, suffix, slice_it, refused)
+                break
+            except SettingsRefused as e:  # each round keeps more of the template's: it ends
+                refused.update(e.refused)
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
         return 0, 1

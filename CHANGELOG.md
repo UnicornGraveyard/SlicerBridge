@@ -7,6 +7,10 @@
   (`brew install --cask snapmaker-orca`); without it the file is written unsliced, with a warning.
   `SLICERBRIDGE_SNAPMAKER_ORCA` says where it is. `verify --slice` slices U1 files too.
 - A slice says the slicer's time and grams, and the prime tower's share of the filament laid.
+- Snapmaker U1: a carried setting at -1 (Bambu Studio's auto) keeps the template's value where the template has
+  one of its own: some Snapmaker Orca versions won't load the file otherwise ("raft_first_layer_expansion: -1 not
+  in range", "tree_support_wall_count: -1 not in range" on Gatefang). With `--slice`, any other carried setting
+  Snapmaker Orca won't load keeps the template's too, and the file is sliced again. The output names them.
 - Every printer that prints a prime tower gets the U1's tall-print tower below, in its slicer's names
   ([tall.py](slicerbridge/tall.py)): Bambu Studio's `prime_tower_*`, OrcaSlicer's `wipe_tower_*`, and on the
   Prusa MMU3 and XL a 10 mm wipe tower brim and 150% purge spacing (PrusaSlicer's tower has no ribs or speed).
