@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-10-29)
 
 - SlicerBridge describes itself as a Rosetta Stone for multicolor 3MF files, in the README, the plugin, the
   marketplace, the MCP Registry entry and the package summary. The README and docs cover what 0.4.0 added: the
