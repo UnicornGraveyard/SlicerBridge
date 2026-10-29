@@ -930,56 +930,69 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
     # with the carried settings: a value the slicer won't take keeps the printer's.
     tallest = max(p.size[2] for p in m.plates)
     tower_extra, tower_step = tall_tower(m.slug, m.plates, likely, printer.slicer)
+    before_tower, carried_before_tower = likely, carried
     if tower_extra:
         likely = {**likely, **tower_extra}
         bed = Bed.of(likely)
         carried = {**carried, **tower_extra}
     placements, tower_width, tower_brim = place_all(m.slug, m.plates, bed, likely)
-    settings = compose(key, meta, tsettings, m.src_cfg, m.ordered, m.used, m.mapping, carried, placements, bed,
-                       tower_width, tower_brim)
-    settings, dropped = settle(key, settings, carried, base)
+    # Check 14 tries the tower at the spot it got; where a heavier step clears there than
+    # placement's estimate allowed, the file gets that step instead, at the same spot.
+    steps = [name for name, _r in tall.STEPS.get(printer.slicer, ())]
+    while True:
+        settings = compose(key, meta, tsettings, m.src_cfg, m.ordered, m.used, m.mapping, carried, placements, bed,
+                           tower_width, tower_brim)
+        settings, dropped = settle(key, settings, carried, base)
 
-    transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
-    identity = all(old == new for old, new in m.mapping.items())
-    final.parent.mkdir(parents=True, exist_ok=True)
-    tmp = final.with_name(f"partial - {final.name}")  # not dot-named: macOS would flag it hidden
+        transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
+        identity = all(old == new for old, new in m.mapping.items())
+        final.parent.mkdir(parents=True, exist_ok=True)
+        tmp = final.with_name(f"partial - {final.name}")  # not dot-named: macOS would flag it hidden
 
-    def recode(match: re.Match) -> bytes:
-        code = match.group(2)
-        if code not in m.recoded:
-            m.recoded[code] = transform_states(code.decode(), m.mapping).encode()
-        return match.group(1) + m.recoded[code] + match.group(3)
+        def recode(match: re.Match) -> bytes:
+            code = match.group(2)
+            if code not in m.recoded:
+                m.recoded[code] = transform_states(code.decode(), m.mapping).encode()
+            return match.group(1) + m.recoded[code] + match.group(3)
 
-    with zipfile.ZipFile(m.src) as zin, zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-        zout.comment = STAMP
-        model_settings = remap_model_settings(
-            zin.read("Metadata/model_settings.config").decode(), m.mapping, m.used).encode()
-        root_model = retransform_items(zin.read(ROOT_MODEL).decode(), transforms)
-        root_model = re.sub(r'(<metadata name="Application">)[^<]*(</metadata>)',
-                            lambda x: x.group(1) + application.group(1) + x.group(2), root_model).encode()
-        for item in zin.infolist():
-            safe = posixpath.normpath(item.filename).lstrip("/")
-            if safe.startswith("..") or BAMBU_LEFTOVERS.match(item.filename):
-                continue  # zip-slip guard; Bambu's slice leftovers
-            if item.filename == "Metadata/project_settings.config":
-                zout.writestr(item, json.dumps(settings, indent=4, ensure_ascii=False).encode())
-            elif item.filename == "Metadata/slice_info.config":
-                zout.writestr(item, slice_info)  # OrcaSlicer's unsliced stub
-            elif item.filename == "Metadata/model_settings.config":
-                zout.writestr(item, model_settings)
-            elif item.filename == ROOT_MODEL:
-                zout.writestr(item, root_model if identity else PAINT.sub(recode, root_model))
-            elif item.filename == "Metadata/layer_config_ranges.xml" and not identity:
-                xml = zin.read(item.filename).decode()
-                zout.writestr(item, LAYER_RANGE_EXTRUDER.sub(
-                    lambda x: f"{x.group(1)}{m.mapping.get(int(x.group(2)), int(x.group(2)))}{x.group(3)}", xml))
-            elif item.filename.lower().endswith(".model") and not identity:
-                zout.writestr(item, PAINT.sub(recode, zin.read(item.filename)))
-            else:
-                zout.writestr(item, zin.read(item.filename))
+        with zipfile.ZipFile(m.src) as zin, zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            zout.comment = STAMP
+            model_settings = remap_model_settings(
+                zin.read("Metadata/model_settings.config").decode(), m.mapping, m.used).encode()
+            root_model = retransform_items(zin.read(ROOT_MODEL).decode(), transforms)
+            root_model = re.sub(r'(<metadata name="Application">)[^<]*(</metadata>)',
+                                lambda x: x.group(1) + application.group(1) + x.group(2), root_model).encode()
+            for item in zin.infolist():
+                safe = posixpath.normpath(item.filename).lstrip("/")
+                if safe.startswith("..") or BAMBU_LEFTOVERS.match(item.filename):
+                    continue  # zip-slip guard; Bambu's slice leftovers
+                if item.filename == "Metadata/project_settings.config":
+                    zout.writestr(item, json.dumps(settings, indent=4, ensure_ascii=False).encode())
+                elif item.filename == "Metadata/slice_info.config":
+                    zout.writestr(item, slice_info)  # OrcaSlicer's unsliced stub
+                elif item.filename == "Metadata/model_settings.config":
+                    zout.writestr(item, model_settings)
+                elif item.filename == ROOT_MODEL:
+                    zout.writestr(item, root_model if identity else PAINT.sub(recode, root_model))
+                elif item.filename == "Metadata/layer_config_ranges.xml" and not identity:
+                    xml = zin.read(item.filename).decode()
+                    zout.writestr(item, LAYER_RANGE_EXTRUDER.sub(
+                        lambda x: f"{x.group(1)}{m.mapping.get(int(x.group(2)), int(x.group(2)))}{x.group(3)}", xml))
+                elif item.filename.lower().endswith(".model") and not identity:
+                    zout.writestr(item, PAINT.sub(recode, zin.read(item.filename)))
+                else:
+                    zout.writestr(item, zin.read(item.filename))
 
-    # The checks, before anything lands in out/.
-    info, problems, warnings = verify.audit(tmp, m.src, key)
+        # The checks, before anything lands in out/.
+        info, problems, warnings = verify.audit(tmp, m.src, key)
+        here = steps.index(tower_step) if tower_step in steps else 0
+        owed = verify.owed_step_of(tmp, key) if here > 0 else None
+        if owed is None or owed >= here:
+            break
+        tmp.unlink()
+        tower_step = steps[owed]
+        tower_extra = tall.settings(before_tower, tall.STEPS[printer.slicer][owed][1])
+        likely, carried = {**before_tower, **tower_extra}, {**carried_before_tower, **tower_extra}
     if slice_it and not problems:
         si, sp, sw = verify.slice_check(tmp, key)
         info, problems, warnings = info + si, problems + sp, warnings + sw

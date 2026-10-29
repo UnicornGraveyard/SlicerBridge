@@ -92,6 +92,8 @@ def test_check_14_fails_a_tall_file_on_the_light_tower_and_passes_the_heavier(tm
         assert problems and "prime_tower_brim_width" in problems[0] and "rib" not in problems[0]
         info, problems, _w = check.tall_tower(z, snug, boxes, "orca")
         assert problems == [] and "on its own ribs set" in info[0]
+        # What the engine asks before it keeps a file: the step the tower's spot has room for.
+        assert [check.owed_step(z, {**cfg, "wipe_tower_x": [x]}, boxes, "orca") for x in ("200", "220", "235")] == [0, 1, 2]
 
 
 def test_the_prusa_layout_says_whether_the_wider_brim_has_room():

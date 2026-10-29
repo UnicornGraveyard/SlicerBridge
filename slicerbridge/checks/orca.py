@@ -472,12 +472,13 @@ def tower_clear(z: zipfile.ZipFile, number: int, t: tuple, footprint: tuple, are
     return not on_model and area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]
 
 
-def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple[list[str], list[str], list[str]]:
-    """Check 14: (info, problems, warnings) about a tall print's prime tower."""
+def owed_step(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> int | None:
+    """Which tower check 14 holds a tall file to: 0 the whole heavier tower, 1 the same on
+    the file's own ribs, 2 the slower tower alone; None for a file it doesn't apply to."""
     tallest = max((hi[2] - lo[2] for b in boxes if b for _n, lo, hi in [b]), default=0.0)
     rules = TALL_TOWER_MIN.get(slicer)
     if cfg.get("enable_prime_tower") != "1" or tallest <= TALL_PRINT_MM or not rules:
-        return [], [], []
+        return None
     pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
     area = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
@@ -489,8 +490,26 @@ def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple
             for idx, b in enumerate(boxes))
 
     stock_ribs = tuple(t for t in rules if t[0] not in RIB_KEYS)
-    owed = next((step for step in (rules, stock_ribs) if fits(step)), ())
-    roomy, owed_keys = owed is rules, {key for key, _w, _c in owed}
+    return next((i for i, step in enumerate((rules, stock_ribs)) if fits(step)), 2)
+
+
+def owed_step_of(f: Path, key: str) -> int | None:
+    """owed_step() for a written file made for printer `key`."""
+    with zipfile.ZipFile(f) as z:
+        cfg = json.loads(z.read("Metadata/project_settings.config").decode())
+        boxes = on_plates(z, cfg, PRINTERS[key].label)[3]
+        return owed_step(z, cfg, boxes, PRINTERS[key].slicer)
+
+
+def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple[list[str], list[str], list[str]]:
+    """Check 14: (info, problems, warnings) about a tall print's prime tower."""
+    step = owed_step(z, cfg, boxes, slicer)
+    if step is None:
+        return [], [], []
+    tallest = max((hi[2] - lo[2] for b in boxes if b for _n, lo, hi in [b]), default=0.0)
+    rules = TALL_TOWER_MIN[slicer]
+    owed = (rules, tuple(t for t in rules if t[0] not in RIB_KEYS), ())[step]
+    roomy, owed_keys = step == 0, {key for key, _w, _c in owed}
     weak = []
     for key, want, ceiling in rules:
         if key not in cfg or not (key in owed_keys or ceiling):
