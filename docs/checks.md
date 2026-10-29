@@ -31,6 +31,14 @@ With `--slice` (or `slicerbridge verify --slice`):
     bed is sliced as a scaled copy, the way a downloader would print it. A slice still running after 20 minutes
     is a failure, and a slicer crash gets one more try.
 
+And whatever the source:
+
+14. A plate taller than 100 mm carries at least the heavier prime tower tall prints get
+    ([tall.py](../slicerbridge/tall.py)), in the slicer's own names: brim 10 mm, extra rib length 20 mm, rib
+    width 12 mm, purge spacing 150%, tower speed 60 mm/s at most. Where that wider base wouldn't fit at the
+    file's tower spot (it would touch the model or leave the bed), only the slower tower is required, with a
+    warning. The minimums are written out in the check, not taken from the engine.
+
 ## u1 engine (Snapmaker U1)
 
 1. Not a white blob (unsliced Bambu projects tricked earlier converters into 4 white filaments).
@@ -60,3 +68,7 @@ Each per-plate PrusaSlicer project is checked for:
 9. PrusaSlicer loads it (`--info`).
 10. With `--slice`, PrusaSlicer slices it.
 11. Size unchanged.
+
+A plate taller than 100 mm on a printer with a wipe tower (the MMU3, the XL) gets a 10 mm tower brim and 150%
+purge spacing where every plate's tower finds a spot for the wider brim, and a warning where it doesn't.
+PrusaSlicer's tower has no ribs or speed of its own.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Every printer that prints a prime tower gets the U1's tall-print tower below, in its slicer's names
+  ([tall.py](slicerbridge/tall.py)): Bambu Studio's `prime_tower_*`, OrcaSlicer's `wipe_tower_*`, and on the
+  Prusa MMU3 and XL a 10 mm wipe tower brim and 150% purge spacing (PrusaSlicer's tower has no ribs or speed).
+  The settings are minimums: a printer's own heavier tower stays. The Bambu and OrcaSlicer-family files read
+  them back through their slicer like the carried print settings, and check 14 fails a tall file on the light
+  tower. A tower footprint counts longer or wider ribs, so the room kept for it grows with them.
 - Snapmaker U1: a plate taller than 100 mm gets a heavier prime tower (brim 10 mm, extra rib length 20 mm, rib
   width 12 mm, purge spacing 150%, tower speed 60 mm/s), placed and checked for room with that wider base. Where
   the tower's strip can't hold it, the file gets only the slower tower and a warning to slice it in Snapmaker

@@ -49,6 +49,7 @@ from .._vendor.panda2prusa.settings import ENUMS, PATTERNS, RENAMED, Warnings, t
 from .._vendor.panda2prusa.transform import Transform
 from .._vendor.panda2prusa.writer import write_prusa_3mf
 
+from .. import tall
 from ..carry import marked_changed, print_keys
 from ..errors import Refusal
 from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name, run_slicer
@@ -495,9 +496,10 @@ def load_profile(key: str) -> Profile:
 
 
 def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer,
-                 refused: Optional[dict] = None) -> tuple[str, list, set]:
+                 refused: Optional[dict] = None, tower: Optional[dict] = None) -> tuple[str, list, set]:
     """(Slic3r_PE.config text, notes, the keys carried from the source): the Prusa profile, the
-    model's colors, and its print settings, less the `refused` ones ({key: why}), which keep the profile's."""
+    model's colors, and its print settings, less the `refused` ones ({key: why}), which keep the profile's,
+    and the wipe tower settings `tower` (tall.py) last."""
     refused = refused or {}
     values = dict(prof.values)
     notes = []
@@ -526,6 +528,7 @@ def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer,
         values[k] = v
         carried.add(k)
     notes += [f"not carried over: {w}" for w in warnings.lines()]
+    values.update(tower or {})
 
     body = "".join(f"; {k} = {values[k]}\n" for k, _ in prof.items if k != "compatible_printers")
     return f"; {prof.header}\n\n{body}", notes, carried
@@ -603,8 +606,9 @@ def outlines(path: Path) -> dict:
 
 
 def layout(pl: Placement, bed: tuple, tower_width: Optional[float], plate: Optional[Plate] = None,
-           outline: Optional[set] = None) -> tuple:
-    """Where the model's center goes, and the wipe tower's front-left corner (or None).
+           outline: Optional[set] = None, brim: float = TOWER_BRIM) -> tuple:
+    """Where the model's center goes, the wipe tower's front-left corner (or None), and
+    whether the tower with a `brim` mm brim was found a spot clear of the model and on the bed.
 
     Without a wipe tower the model is centered. With one, PrusaSlicer would put the
     tower at its default spot -- inside a big model, where PrusaSlicer 2.9.6 logs a
@@ -615,22 +619,24 @@ def layout(pl: Placement, bed: tuple, tower_width: Optional[float], plate: Optio
     its stabilizing cone grow with the print.
     """
     center, tower = _strip_layout(pl, bed, tower_width)
-    if tower is None or plate is None or not outline:
-        return center, tower
+    if tower is None:
+        return center, tower, False
     bx0, by0, bx1, by1 = bed[:4]
     w, d = pl.size[:2]
     model = (center[0] - w / 2, center[1] - d / 2, center[0] + w / 2, center[1] + d / 2)
-    body = (tower[0] - TOWER_BRIM, tower[1] - TOWER_BRIM,
-            tower[0] + tower_width + TOWER_BRIM, tower[1] + TOWER_DEPTH_GUESS + TOWER_BRIM)
+    body = (tower[0] - brim, tower[1] - brim, tower[0] + tower_width + brim, tower[1] + TOWER_DEPTH_GUESS + brim)
+    on_bed = bx0 <= body[0] and by0 <= body[1] and body[2] <= bx1 and body[3] <= by1
     if not (body[0] < model[2] and model[0] < body[2] and body[1] < model[3] and model[1] < body[3]):
-        return center, tower  # the strip holds it
+        return center, tower, on_bed  # the strip holds it
+    if plate is None or not outline:
+        return center, tower, False
     from . import orca as orca_engine
     from ..checks import orca as check
     move = placement_move(plate, pl, center)
     cells = check.map_cells(outline, lambda x, y: move.apply_point(x, y, 0.0)[:2])
-    spot = orca_engine.tower_spot(cells, orca_engine.Bed(bx0, by0, bx1, by1, bed[4], tower_width, TOWER_BRIM),
+    spot = orca_engine.tower_spot(cells, orca_engine.Bed(bx0, by0, bx1, by1, bed[4], tower_width, brim),
                                   tower_width, TOWER_DEPTH_GUESS, center)
-    return center, spot or tower
+    return center, spot or tower, spot is not None
 
 
 def _strip_layout(pl: Placement, bed: tuple, tower_width: Optional[float]) -> tuple:
@@ -1042,9 +1048,27 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
             if (OUT / n).exists() and ours(OUT / n):
                 (OUT / n).unlink()
         raise
+    # A tall print gets the heavier wipe tower (tall.py) if every plate's tower finds a
+    # spot for its wider brim. PrusaSlicer's tower has no speed of its own to slow, so
+    # where there's no room it keeps the profile's, with a warning.
+    tallest = max(p.size[2] for p in src.plates)
+    tower_extra, brim, tall_note = {}, TOWER_BRIM, ""
+    if prof.tower_width is not None and tallest > tall.TALL_PRINT_MM:
+        heavy = tall.settings(prof.values, tall.TOWER["prusa"])
+        heavy_brim = max(TOWER_BRIM, float(heavy.get("wipe_tower_brim_width") or 0))
+        roomy = all(layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1), heavy_brim)[2]
+                    for plate, pl in zip(src.plates, placements))
+        if roomy:
+            tower_extra, brim = heavy, heavy_brim
+            tall_note = (f"{tallest:.0f} mm tall, over {tall.TALL_PRINT_MM:g}: heavier wipe tower"
+                         + (f" ({tall.describe(heavy)})" if heavy else " (the profile's own already is)"))
+        else:
+            tall_note = (f"⚠ {tallest:.0f} mm tall, over {tall.TALL_PRINT_MM:g}, but there's no room for the heavier "
+                         f"wipe tower's brim: the profile's tower. Slice it, and give the tower a bigger brim if "
+                         f"the model leaves room")
     # A carried value PrusaSlicer won't load (Bambu's -1 for "auto", say) keeps the profile's.
     refused: dict = {}
-    config, notes, carried = build_config(prof, src, mapping, printer, refused)
+    config, notes, carried = build_config(prof, src, mapping, printer, refused, tower_extra)
 
     OUT.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -1052,7 +1076,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         final = OUT / name
         # Not dot-named (macOS would flag it hidden), and still ending in .3mf: PrusaSlicer goes by extension.
         tmp = OUT / f"partial - {name}"
-        center, tower = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1))
+        center, tower, _clear = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1), brim)
         apply_placement(plate, pl, bed, center)
         while True:
             try:
@@ -1078,7 +1102,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
             if k is None:
                 break
             refused[k] = "PrusaSlicer won't load it"
-            config, notes, carried = build_config(prof, src, mapping, printer, refused)
+            config, notes, carried = build_config(prof, src, mapping, printer, refused, tower_extra)
             tmp.unlink(missing_ok=True)
         ok = all(c.ok for c in checks)
         where = f"plate {plate.number}" if multi else ""
@@ -1095,6 +1119,8 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         for w in stats.warnings:
             print(f"       panda2prusa: {w}")
         if plate is src.plates[0]:
+            if tall_note:
+                print(f"       {tall_note}")
             for n in notes:
                 print(f"       settings: {n}")
 
