@@ -79,6 +79,8 @@ READ_BACK_IGNORED = {"upward_compatible_machine", "wipe_tower_x", "wipe_tower_y"
 # SeamPlacer::place_seam, and slices in 52 s with it off). It only offsets where the
 # inner walls' seams line up, so off is safe.
 SLICER_WORKAROUNDS = {"staggered_inner_seams": "0"}
+# Bambu Studio's names for values OrcaSlicer reads back under another: carried under OrcaSlicer's.
+ORCA_NAMES = {("ironing_pattern", "zig-zag"): "rectilinear", ("support_ironing_pattern", "zig-zag"): "rectilinear"}
 # Settings the slicer recomputes for its own machine on load: what it reads back is written.
 SLICER_OWNED = {"flush_volumes_matrix", "flush_volumes_vector", "flush_multiplier"}
 # What a brand's own slicer reads differently from OrcaSlicer (brandcheck.py slices
@@ -559,6 +561,12 @@ def flush_matrix(src_cfg: dict, used: list[int], base: dict) -> list[str]:
     return [off if i != j else "0" for i in range(k) for j in range(k)]
 
 
+def in_orcaslicer_terms(carried: dict, base: dict) -> dict:
+    """The carried settings with each value OrcaSlicer names differently under its name (ORCA_NAMES)."""
+    named = {k: ORCA_NAMES.get((k, v), v) for k, v in carried.items()}
+    return {k: v for k, v in named.items() if v != base.get(k)}
+
+
 def absolute_line_widths(s: dict) -> set:
     """Write every line width given in % of the nozzle in mm; returns the keys changed."""
     nozzles = {float(n) for n in s.get("nozzle_diameter") or []}
@@ -778,10 +786,13 @@ def settle(key: str, settings: dict, carried: dict, base: dict) -> tuple[dict, d
                 elif k == "different_settings_to_system":
                     continue  # follows the carried keys; settled with them
                 elif k in SLICER_OWNED or (isinstance(settings.get(k), list) and isinstance(back.get(k), list)
-                                           and back[k][:len(settings[k])] == settings[k]):
+                                           and back[k][:len(settings[k])] == settings[k]) or (
+                        isinstance(settings.get(k), str) and isinstance(back.get(k), str)
+                        and "".join(settings[k].split()) == "".join(back[k].split())):
                     # The slicer pads a list to its own length when it loads one, and on a
                     # toolchanger keeps its own flush volumes per head (the Creator 5's come
-                    # back 111 mm3 lower, in four blocks). Write what it would.
+                    # back 111 mm3 lower, in four blocks), and respaces a text value (the ZR Ultra S's
+                    # thumbnails come back "48x48/PNG, 300x300/PNG"). Write what it would.
                     settings[k] = back[k]
                     continue
                 else:
@@ -889,6 +900,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         raise Refusal(f"no Application stamp in the {key} template -- run slicerbridge templates --refresh")
 
     carried, skipped = carry_print_settings(m.src_cfg, base)
+    if printer.slicer == "orca":
+        carried = in_orcaslicer_terms(carried, base)
     # The prime tower's likely size, from the settings the file will have.
     likely = {**base, **carried, "filament_colour": [f["color"] for f in m.ordered],
               "flush_volumes_matrix": flush_matrix(m.src_cfg, m.used, base)}

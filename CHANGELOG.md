@@ -13,7 +13,10 @@
   accelerations and line widths still only when marked. The Snapmaker U1 file carried none of them, only the
   template's: it carries them now, and prints supports whenever the source does. A carried value PrusaSlicer
   won't load (Bambu's -1 for "auto" raft expansion, say) keeps the Prusa profile's, and the output says so,
-  instead of failing the file.
+  instead of failing the file. A Bambu value OrcaSlicer names differently (ironing pattern `zig-zag`, its
+  `rectilinear`) is carried under OrcaSlicer's name instead of falling back to the printer's.
+- A printer setting OrcaSlicer reads back only respaced (the ZR Ultra S's thumbnails, `48x48/PNG, 300x300/PNG`)
+  is written its way, instead of skipping the printer as a bug in compose().
 - Four more printers that change nozzles or toolheads: the Bambu Lab X2D and H2D Pro (two nozzles, written by
   Bambu Studio), and the Flashforge Creator 5 Pro and WonderMaker ZR Ultra S (four toolheads, written by
   OrcaSlicer). 34 printers in all. On Windows, OrcaSlicer 2.4.2's command line crashes opening any

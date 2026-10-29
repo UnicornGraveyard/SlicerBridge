@@ -104,3 +104,19 @@ def test_a_value_prusaslicer_refuses_keeps_the_profiles_and_says_so():
     assert "raft_first_layer_expansion = 3" in config and "fill_density = 35%" in config
     assert carried == {"fill_density"} and any("raft_first_layer_expansion = -1" in n for n in notes)
     assert prusa.refused_key([check], carried) is None  # refused once, never retried
+
+
+def test_a_bambu_value_orcaslicer_names_differently_is_carried_under_its_name():
+    from slicerbridge.engines import orca
+    carried = {"ironing_pattern": "zig-zag", "support_ironing_pattern": "zig-zag", "wall_loops": "4"}
+    assert orca.in_orcaslicer_terms(carried, {"ironing_pattern": "concentric", "support_ironing_pattern": "rectilinear"}) \
+        == {"ironing_pattern": "rectilinear", "wall_loops": "4"}  # the support one is the printer's already
+
+
+def test_a_value_orcaslicer_only_respaces_is_written_its_way(monkeypatch):
+    from slicerbridge.engines import orca
+    written = {"thumbnails": "48x48/PNG,300x300/PNG", "different_settings_to_system": ["", "", ""]}
+    back = {"thumbnails": "48x48/PNG, 300x300/PNG", "different_settings_to_system": ["", "", ""]}
+    monkeypatch.setattr(orca, "read_back", lambda key, settings: (dict(back), []))
+    settings, dropped = orca.settle("zrultras", written, {}, {})
+    assert settings["thumbnails"] == "48x48/PNG, 300x300/PNG" and dropped == {}
