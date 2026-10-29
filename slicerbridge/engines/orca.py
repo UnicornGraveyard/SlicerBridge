@@ -1038,7 +1038,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         print(f"       {', '.join(worked_around)} off: {SLICERS[printer.slicer].name} hangs on it")
     crowded = any(pl.crowded for pl in placements if pl.fits)
     for w in warnings:
-        if "bigger than" not in w and not (crowded and "may touch" in w):  # said above
+        if "bigger than" not in w and "heavier tower base has no room" not in w and not (crowded and "may touch" in w):  # said above
             print(f"       ⚠ {w}")
     return True
 
