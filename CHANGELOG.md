@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Snapmaker Orca 2.4.1's command line slices Gatefang's U1 file, which 2.4.0's crashed on (exit -11) and
+  still does. The docs say so.
+
 ## 0.4.1 (2026-10-29)
 
 - SlicerBridge describes itself as a Rosetta Stone for multicolor 3MF files, in the README, the plugin, the

@@ -497,7 +497,8 @@ def unhide(path: Path) -> None:
 AUTO = "-1"
 OUT_OF_RANGE = re.compile(r"(\w+): (\S+) not in range")
 # Snapmaker Orca 2.4.0's command line crashed (exit -11, twice) slicing Gatefang's file,
-# which its app sliced fine (2026-10-29). A crash is the command line's, not the file's.
+# which its app sliced fine (2026-10-29); 2.4.1's slices the same file (2026-10-30). A crash
+# is the command line's, not the file's.
 CRASHED = re.compile(r"didn't slice it \(exit (-?\d+)\)")
 
 

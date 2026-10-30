@@ -72,8 +72,8 @@ the bed is centered at full size with a warning and the scale that would fit.
   PrusaSlicer profile and the wipe tower placed beside the model.
 - **u1**: the Snapmaker U1 project, from [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates, stamped
   with the template's own version so Snapmaker Orca opens it without complaint. With `--slice`, Snapmaker Orca
-  slices it; when its command line crashes (2.4.0 did, on a file its app slices), the file is kept with a
-  warning to slice it in the app.
+  slices it; when its command line crashes (2.4.0's did, on a file its app and 2.4.1's command line slice),
+  the file is kept with a warning to slice it in the app.
 
 ## Checks
 
