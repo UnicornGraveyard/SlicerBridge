@@ -498,6 +498,15 @@ def place_all(slug: str, plates: list[Plate], bed: Bed,
     return first  # crowded at any width: the printer's own, and a warning
 
 
+def squeezed_brim(tower_brim: Optional[float], tower_extra: dict) -> Optional[float]:
+    """The brim placement squeezed an auto-brim tower to, unless the tall step sets a brim of its own.
+
+    compose() writes a squeezed brim over the carried settings, so a file rebuilt at a heavier
+    step than placement found room for would get the squeezed 3 mm, not its 10, and fail check 14.
+    """
+    return None if any(k in tower_extra for k in ("prime_tower_brim_width", "wipe_tower_brim_width")) else tower_brim
+
+
 def tall_tower(slug: str, plates: list[Plate], cfg: dict, slicer: str) -> tuple[dict, str]:
     """({setting: value} for a tall print's prime tower, the tall.STEPS step it got).
 
@@ -993,6 +1002,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         tower_step = steps[owed]
         tower_extra = tall.settings(before_tower, tall.STEPS[printer.slicer][owed][1])
         likely, carried = {**before_tower, **tower_extra}, {**carried_before_tower, **tower_extra}
+        tower_brim = squeezed_brim(tower_brim, tower_extra)
     if slice_it and not problems:
         si, sp, sw = verify.slice_check(tmp, key)
         info, problems, warnings = info + si, problems + sp, warnings + sw

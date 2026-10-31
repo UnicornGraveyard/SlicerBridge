@@ -384,22 +384,44 @@ def tower_rect(cfg: dict, at: tuple) -> tuple:
     return at[0] - b, at[1] - b, at[0] + w + b, at[1] + d + b
 
 
-@functools.lru_cache(maxsize=None)
+def _changed(path: Path) -> tuple:
+    """What a cache keys on beside the path: the MCP server runs for hours, and a source
+    saved again, or a template rebuilt for an updated slicer, must be read again."""
+    try:
+        st = path.stat()
+        return st.st_mtime_ns, st.st_size
+    except OSError:
+        return ()
+
+
 def template(key: str) -> tuple[dict, dict, tuple]:
     """(meta, PLA template settings, version stamp) of one printer."""
+    return _template(key, _changed(TEMPLATES / key / "PLA.3mf"))
+
+
+@functools.lru_cache(maxsize=64)
+def _template(key: str, _stamp: tuple) -> tuple[dict, dict, tuple]:
     meta, settings = templates_build.load(key)
     with zipfile.ZipFile(TEMPLATES / key / "PLA.3mf") as z:
         stamp = u1.stamp(z)
     return meta, settings["PLA"], stamp
 
 
-@functools.lru_cache(maxsize=None)
 def source_facts(src: Path) -> dict:
+    return _source_facts(src, _changed(src))
+
+
+@functools.lru_cache(maxsize=8)
+def _source_facts(src: Path, _stamp: tuple) -> dict:
     return u1.source_facts(src)
 
 
-@functools.lru_cache(maxsize=None)
 def source_sizes(src: Path) -> dict:
+    return _source_sizes(src, _changed(src))
+
+
+@functools.lru_cache(maxsize=8)
+def _source_sizes(src: Path, _stamp: tuple) -> dict:
     with zipfile.ZipFile(src) as z:
         return {n: tuple(hi[k] - lo[k] for k in range(3)) for n, lo, hi in u1.plate_boxes(z)}
 
