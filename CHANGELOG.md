@@ -5,9 +5,15 @@
 - The MCP server's read-only tools state all four behaviour hints (not destructive, idempotent, as well as
   read-only and closed to the network), as `convert_model` already did. A client may read a missing hint as its
   default, and some directories refuse a tool that leaves one out.
-
-## Unreleased
-
+- A tall print rebuilt at a heavier tower than placement found room for kept the 3 mm brim placement squeezed an
+  auto-brim tower to, not the heavier tower's 10 mm, so check 14 refused a printable file (and took back that
+  printer's earlier file). It keeps the 10 mm.
+- The checks cached each source's paint and sizes, and each printer's template, by path alone. The MCP server
+  runs as one process for hours, so a source saved again, or a template rebuilt after a slicer update, was
+  checked against its old self and a correct file could fail. The caches now see a changed file.
+- A Snapmaker U1 file that fails partway through being written leaves no `partial - …` file behind, and takes
+  back SlicerBridge's earlier file for it, as the other engines do.
+- The stray `uv.lock` at the repository's root is gone: nothing used it. The plugin's own lock stays.
 - Snapmaker Orca 2.4.1's command line slices Gatefang's U1 file, which 2.4.0's crashed on (exit -11) and
   still does. The docs say so.
 

@@ -800,6 +800,16 @@ def inspect(src: Path) -> list[str]:
     return lines
 
 
+def withdraw(out_path: Path) -> None:
+    """After a failure: no partial file left behind, and no earlier file of ours standing in for this run."""
+    partial = out_path.with_name(f"partial - {out_path.name}")
+    if partial.exists():
+        partial.unlink()
+    if out_path.exists() and ours(out_path):
+        out_path.unlink()
+        print(f"  removed the earlier {out_path.name}: it no longer passes")
+
+
 def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
             suffix: str = "") -> tuple[int, int]:
     """Write `name`'s U1 file into out/<name>/; returns (written, refused or failed).
@@ -814,9 +824,11 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
                 refused.update(e.refused)
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
+        withdraw(named_path(out, name, "u1", prefix, suffix))
         return 0, 1
     except Exception as e:  # a bug: this printer fails, the other engines still run
         print(f"  FAIL {name} {U1_LABEL}\n!! {type(e).__name__}: {e}")
+        withdraw(named_path(out, name, "u1", prefix, suffix))
         return 0, 1
     finally:
         gc.collect()
