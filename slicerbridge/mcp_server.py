@@ -35,7 +35,9 @@ except ImportError as e:  # the server is an optional extra
 from .cli import main as cli_main
 from .printers import SETS
 
-READS = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+# All four hints on every tool, true or false: a client may read a missing one as its
+# default, and some directories refuse a tool that leaves one out.
+READS = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 WRITES = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 mcp = MCPServer("slicerbridge", instructions=(

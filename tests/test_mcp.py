@@ -18,6 +18,16 @@ def test_tools_are_listed_with_descriptions():
     assert all(t.description for t in tools.values())
 
 
+def test_every_tool_says_how_it_behaves():
+    """All four hints, explicitly: only convert_model writes, and nothing reaches the network."""
+    for t in asyncio.run(mcp.list_tools()):
+        a = t.annotations.model_dump(by_alias=True)  # the names a client reads, whatever mcp's attributes are
+        hints = [a.get(k) for k in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")]
+        assert all(isinstance(h, bool) for h in hints), (t.name, hints)
+        read_only, destructive, _idempotent, open_world = hints
+        assert read_only == (t.name != "convert_model") and not destructive and not open_world, t.name
+
+
 def test_convert_and_verify_over_mcp(project, tmp_path):
     out = tmp_path / "mcp-out"
     text = call("convert_model", {"model_path": str(project), "printers": "u1", "name": "Cube", "out_dir": str(out)})
