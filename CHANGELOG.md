@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The MCP server's read-only tools state all four behaviour hints (not destructive, idempotent, as well as
+  read-only and closed to the network), as `convert_model` already did. A client may read a missing hint as its
+  default, and some directories refuse a tool that leaves one out.
+
+## Unreleased
+
 - Snapmaker Orca 2.4.1's command line slices Gatefang's U1 file, which 2.4.0's crashed on (exit -11) and
   still does. The docs say so.
 
