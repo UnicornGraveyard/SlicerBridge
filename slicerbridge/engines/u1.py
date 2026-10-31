@@ -37,6 +37,8 @@ import json
 import math
 import posixpath
 import re
+import subprocess
+import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -53,7 +55,8 @@ from ..carry import carry_print_settings
 from ..checks import orca as orca_check, u1 as u1check
 from ..errors import Refusal
 from ..output import land, partial, withdraw
-from ..printers import SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path
+from ..printers import (SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path, refused_settings,
+                        run_slicer)
 from ..source import palette
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "u1"  # bl2u1's U1 templates (GPLv3)
@@ -463,6 +466,38 @@ def not_carried(carried: dict, u1: dict, refused: dict) -> dict:
     return kept
 
 
+READ_BACK_LIMIT = 180  # seconds; Snapmaker Orca 2.4.1 loads and saves the cube in about 2
+
+
+def read_back(f: Path) -> dict:
+    """{setting: what Snapmaker Orca said} for each of `f`'s settings it won't load.
+
+    The settings go into the U1 template's 20 mm cube, and Snapmaker Orca opens it and
+    saves it again: seconds, where slicing the model takes minutes. So a carried value it
+    won't take keeps the template's whether or not the file is sliced. Nothing when it
+    isn't installed (it isn't installed for this), or when it hangs or fails otherwise:
+    check 13 still slices what's asked.
+    """
+    slicer = SLICERS["snapmaker"]
+    if not slicer.installed:
+        return {}
+    with zipfile.ZipFile(f) as z:
+        settings = z.read("Metadata/project_settings.config")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        probe = Path(tmp) / "probe.3mf"
+        with zipfile.ZipFile(template_path(False)) as zin, \
+             zipfile.ZipFile(probe, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                zout.writestr(item, settings if item.filename == "Metadata/project_settings.config" else zin.read(item))
+        try:
+            # Its version check refuses every project, its own included (checks/orca.py slice_check).
+            run = run_slicer([slicer.binary, *slicer.cli, "--allow-newer-file", "--outputdir", tmp,
+                              "--export-3mf", "back.3mf", probe], timeout=READ_BACK_LIMIT)
+        except subprocess.TimeoutExpired:
+            return {}
+    return refused_settings(run.stdout + run.stderr) if run.returncode != 0 else {}
+
+
 def slice_check(f: Path) -> orca_check.Slice:
     """Slice `f` in Snapmaker Orca: checks/orca.py's check 13.
 
@@ -663,13 +698,18 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
 
     # The checks, before anything lands in the output folder.
     info, problems = u1check.audit(tmp, src)
-    sliced, slice_warnings, wont = [], [], {}
-    if slice_it and not problems:
+    sliced, slice_warnings = [], []
+    # A carried value Snapmaker Orca won't load is written again with the template's: read back
+    # whenever it's installed, and found again in the slice's log if it gets that far. A value of
+    # the template's or the tower's it won't load is a problem.
+    refusals = read_back(tmp) if not problems else {}
+    problems += [f"Snapmaker Orca won't load {k}: {said}" for k, said in refusals.items() if k not in carried]
+    if slice_it and not problems and not refusals:
         result = slice_check(tmp)
         sliced, problems, slice_warnings = result.text()
-        # A carried value this Snapmaker Orca won't load: written again with the template's.
-        wont = {k: f"Snapmaker Orca won't take {v}" for k, v in result.refused.items() if k in carried}
-    if problems:
+        refusals = result.refused
+    wont = {k: f"Snapmaker Orca won't take {carried[k]!r} ({said})" for k, said in refusals.items() if k in carried}
+    if problems or wont:
         tmp.unlink()
         if wont:
             raise SettingsRefused(wont)

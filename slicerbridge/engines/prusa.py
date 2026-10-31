@@ -53,7 +53,7 @@ from ..carry import marked_changed, print_keys
 from ..errors import Refusal
 from ..output import land, partial, withdraw
 from ..printers import (PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, label_of,
-                        name_suffix, out_name, run_slicer)
+                        name_suffix, out_name, refused_settings, run_slicer)
 
 PROFILES = cache_dir() / "prusa-profiles"
 # PrusaSlicer runs against this private settings folder, never your own, so
@@ -535,19 +535,12 @@ def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer,
     return f"; {prof.header}\n\n{body}", notes, carried
 
 
-# What PrusaSlicer names when it won't load a value (check 9's detail).
-REFUSED_VALUE = re.compile(r"Value out of range: (\w+)|Invalid value provided for parameter (\w+)")
-
-
 def refused_key(checks: list, carried: set) -> Optional[str]:
-    """The carried setting PrusaSlicer refused to load, if that is why check 9 failed."""
+    """The carried setting PrusaSlicer refused to load, if that is why check 9 failed (its log, check 9's value)."""
     for c in checks:
         if c.n == "9" and not c.ok:
             log = c.value if isinstance(c.value, str) else c.detail
-            for m in REFUSED_VALUE.finditer(log):
-                k = m.group(1) or m.group(2)
-                if k in carried:
-                    return k
+            return next((k for k in refused_settings(log) if k in carried), None)
     return None
 
 

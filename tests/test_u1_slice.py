@@ -21,7 +21,8 @@ def _gcode(tower_at, time="1h 10m 5s", grams="12.5"):
 
 @pytest.fixture
 def snapmaker(tmp_path, monkeypatch):
-    """A Snapmaker Orca that writes a plate's G-code with its tower where the file puts it, or fails."""
+    """A Snapmaker Orca that writes a plate's G-code with its tower where the file puts it, or fails;
+    and reads a file's settings back (--export-3mf), failing on what it `refuses`."""
     app = tmp_path / "Snapmaker Orca" / "snapmaker-orca"
     app.parent.mkdir()
     app.write_text("")
@@ -31,9 +32,10 @@ def snapmaker(tmp_path, monkeypatch):
 
     def run(cmd, timeout, cwd=None):
         runs.append([str(c) for c in cmd])
-        if fake.fails:
+        slicing = "--slice" in runs[-1]
+        if slicing and fake.fails:
             return check.subprocess.CompletedProcess(cmd, 1, "", "[error] Nothing to be sliced")
-        if fake.crashes:
+        if slicing and fake.crashes:
             return check.subprocess.CompletedProcess(cmd, -11, "", "[error] calc_exclude_triangles:Unable to "
                                                      "create exclude triangles")
         out = cmd[cmd.index("--outputdir") + 1]
@@ -44,12 +46,17 @@ def snapmaker(tmp_path, monkeypatch):
             return check.subprocess.CompletedProcess(cmd, 238, "", "run found error, exit\nParam values in "
                                                      "3mf/config error: \n" + "\n".join(wont) + "".join(
                                                          f"\n[info] cleaning up {i}" for i in range(fake.noise)))
+        if not slicing:
+            return check.subprocess.CompletedProcess(cmd, 0, "", "")
         for n, (x, y) in enumerate(zip(cfg["wipe_tower_x"], cfg["wipe_tower_y"]), start=1):
             (check.Path(out) / f"plate_{n}.gcode").write_text(_gcode((float(x), float(y))))
         return check.subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(check, "run_slicer", run)
-    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "noise": 0, "app": app})
+    monkeypatch.setattr(engine, "run_slicer", run)
+    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "noise": 0, "app": app,
+                             "slices": lambda: [c for c in runs if "--slice" in c],
+                             "read_backs": lambda: [c for c in runs if "--export-3mf" in c]})
     return fake
 
 
@@ -67,8 +74,8 @@ def test_gcode_facts_has_the_slicers_estimate_and_the_towers_share(tmp_path):
 
 def test_the_u1_file_is_sliced_in_snapmaker_orca(project, tmp_path, snapmaker, capsys):
     assert engine.convert(project, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
-    (cmd,) = snapmaker.runs
-    assert cmd[0] == str(snapmaker.app)
+    (cmd,) = snapmaker.slices()
+    assert cmd[0] == str(snapmaker.app) and len(snapmaker.read_backs()) == 1
     assert "--allow-newer-file" in cmd  # its version check refuses every project, its own too
     out = capsys.readouterr().out
     assert "sliced" in out and "1h 10m 5s, 12 g" in out and "(33% of the filament)" in out
@@ -119,31 +126,32 @@ def test_a_setting_snapmaker_orca_wont_load_keeps_the_templates_and_slices(tmp_p
     src = bambu_project(tmp_path / "wide.3mf", extra_settings={"brim_width": "6", "wall_loops": "4"})
     snapmaker.refuses = {"brim_width": "6"}
     assert engine.convert(src, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
-    assert len(snapmaker.runs) == 2  # refused, then sliced without it
+    assert len(snapmaker.read_backs()) == 2 and len(snapmaker.slices()) == 1  # refused, read back without it, sliced
     s = _u1_settings(tmp_path)
     assert s["brim_width"] == engine.load_template(False)["brim_width"] and s["wall_loops"] == "4"
     assert "brim_width" not in s["different_settings_to_system"][0].split(";")
     out = capsys.readouterr().out
-    assert "kept the U1's own brim_width" in out and "Snapmaker Orca won't take 6" in out
+    assert "kept the U1's own brim_width" in out and "Snapmaker Orca won't take '6' (6 not in range [0,5])" in out
 
 
 def test_a_crash_in_snapmaker_orcas_command_line_keeps_the_file(project, tmp_path, snapmaker, capsys):
     """Snapmaker Orca 2.4.0's command line crashed on Gatefang's U1 file; its app sliced it."""
     snapmaker.crashes = True
     assert engine.convert(project, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
-    assert len(snapmaker.runs) == 2  # check 13 gives a crash a second try
+    assert len(snapmaker.slices()) == 2  # check 13 gives a crash a second try
     out = capsys.readouterr().out
     assert "⚠ not sliced: Snapmaker Orca's command line crashed on it (exit -11), twice" in out
     assert out.count("crashed") == 1  # one warning, not check 13's "was run again" as well
     assert (tmp_path / "out" / "Cube" / "Cube - Snapmaker U1.3mf").exists()
 
 
-def test_a_setting_snapmaker_orca_wont_load_is_read_from_its_whole_log(tmp_path, snapmaker, capsys):
+def test_a_setting_snapmaker_orca_wont_load_is_read_from_its_whole_log(tmp_path, snapmaker, monkeypatch, capsys):
     """Check 13 shows the log's last six lines; the refusal can come before them."""
     src = bambu_project(tmp_path / "wide.3mf", extra_settings={"brim_width": "6"})
     snapmaker.refuses, snapmaker.noise = {"brim_width": "6"}, 10
+    monkeypatch.setattr(engine, "read_back", lambda f: {})  # so check 13 is the one that finds it
     assert engine.convert(src, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
-    assert len(snapmaker.runs) == 2  # refused, then sliced without it
+    assert len(snapmaker.slices()) == 2  # refused, then sliced without it
     assert "kept the U1's own brim_width" in capsys.readouterr().out
 
 
@@ -155,3 +163,27 @@ def test_a_crash_that_repeats_fails_check_13_unless_the_engine_excuses_it():
     assert s.text() == ([], [], ["not sliced: its command line crashed"])
     assert check.Slice("Snapmaker Orca", skipped="not sliced: not installed").text() == (
         [], [], ["not sliced: not installed"])
+
+
+def test_a_setting_snapmaker_orca_wont_load_keeps_the_templates_unsliced_too(tmp_path, snapmaker, capsys):
+    """Read back whenever Snapmaker Orca is there: a carried value it won't take keeps the template's
+    without --slice, in seconds."""
+    src = bambu_project(tmp_path / "wide.3mf", extra_settings={"brim_width": "6", "wall_loops": "4"})
+    snapmaker.refuses = {"brim_width": "6"}
+    assert engine.convert(src, "Cube", ["u1"], tmp_path / "out") == (1, 0)
+    assert len(snapmaker.read_backs()) == 2 and not snapmaker.slices()
+    s = _u1_settings(tmp_path)
+    assert s["brim_width"] == engine.load_template(False)["brim_width"] and s["wall_loops"] == "4"
+    assert "kept the U1's own brim_width" in capsys.readouterr().out
+
+
+def test_a_value_of_our_own_snapmaker_orca_wont_load_refuses_the_file(project, tmp_path, snapmaker, capsys):
+    snapmaker.refuses = {"printer_model": engine.load_template(False)["printer_model"]}
+    assert engine.convert(project, "Cube", ["u1"], tmp_path / "out") == (0, 1)
+    assert "Snapmaker Orca won't load printer_model" in capsys.readouterr().out
+    assert not list((tmp_path / "out" / "Cube").glob("*.3mf"))
+
+
+def test_without_snapmaker_orca_nothing_is_read_back(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(engine, "run_slicer", lambda *a, **k: pytest.fail("ran a slicer that isn't there"))
+    assert engine.convert(project, "Cube", ["u1"], tmp_path / "out") == (1, 0)

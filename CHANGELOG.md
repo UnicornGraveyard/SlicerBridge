@@ -24,6 +24,10 @@
   `partial - …` file, and an OrcaSlicer-family printer that fails partway leaves no `partial - …` file either.
   The three engines land a file, move one they didn't write to `_previous/`, and take back their own with one
   module (`output.py`), where each had its own copy.
+- The U1's file is read back in Snapmaker Orca whenever it's installed, not only with `--slice`: it loads the
+  U1 template's cube with the file's settings and saves it again (about 2 seconds), and a carried setting it
+  won't load keeps the template's value. One the file can't do without (the template's, the tall tower's) is a
+  refusal. The three engines read what a slicer says it won't load with one helper (`refused_settings`).
 - The U1's file takes a sliced source's palette from its project settings, as the other engines and the checks
   do, not from `slice_info.config`, which lists the colors as they were when it was sliced.
 
