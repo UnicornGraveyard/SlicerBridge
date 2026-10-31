@@ -1,7 +1,8 @@
 # The checks
 
 Every file passes these before it's written. The paint decoder the checks use is written from the format,
-separately from the conversion code, so the conversion never checks its own work.
+separately from the conversion code, so the conversion never checks its own paint. Not all of it is
+independent, though: [what the checks share with the engines](#what-the-checks-share-with-the-engines).
 
 ## orca engine (Bambu Lab and OrcaSlicer-family printers)
 
@@ -84,3 +85,24 @@ Each per-plate PrusaSlicer project is checked for:
 A plate taller than 100 mm on a printer with a wipe tower (the MMU3, the XL) gets a 10 mm tower brim and 150%
 purge spacing where every plate's tower finds a spot for the wider brim, and a warning where it doesn't.
 PrusaSlicer's tower has no ribs or speed of its own.
+
+## What the checks share with the engines
+
+The paint, palette, extruder, version and size checks (1 to 8, 10 to 12) read the file with the checks' own decoder
+([checks/u1.py](../slicerbridge/checks/u1.py)), and their own reading of the plates.
+
+Where the orca engine's prime tower stands is checked with the engine's own geometry. Check 9's tower warning and
+check 14 size the tower and its brim with `tower_size()` and `tower_rect()`, the bed with `exclusion_rects()` and
+`outline_reach()`: the functions the engine places the tower with, which live in
+[checks/orca.py](../slicerbridge/checks/orca.py) and which the engine imports. The model's outline they test the
+tower against is the engine's too: `_plate_outlines()` reads it with `engines.orca`'s `analyze()`, `Bed` and
+`plate_origin()`. A mistake in that geometry would place a tower wrong and pass it.
+
+Check 13 is the independent one: it slices the file and measures the tower the slicer actually printed, from the
+G-code. It tests that tower against the model's bounding box from the checks' own reading of the plates, and only
+where the printed tower lands inside that box does it ask the engine's outline whether the model is really there.
+It tests the printed tower against the model, not against the bed's edge.
+
+The u1 engine's checks size its tower with their own geometry, written apart from the engine's
+([checks/u1.py](../slicerbridge/checks/u1.py)), and slice it with check 13 in Snapmaker Orca. The prusa engine's
+checks live in the engine itself; PrusaSlicer loading the file (9) and slicing it (10) are the independent ones.
