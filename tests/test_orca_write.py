@@ -167,3 +167,13 @@ def test_a_refusal_naming_no_carried_setting_is_a_refusal(tmp_path, slicer, caps
     made, f = _convert(tmp_path, 40.0)
     assert made == (0, 1) and not f.exists()
     assert "won't load the Flashforge Creator 5 settings" in capsys.readouterr().out
+
+
+def test_an_orca_printer_that_fails_mid_write_leaves_no_partial_file(tmp_path, slicer, monkeypatch):
+    def broken(f, src, key):  # a bug in the checks, after the file is written beside its final name
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(check, "audit", broken)
+    src = bambu_project(tmp_path / "cube.3mf", plates=1)
+    assert orca.convert(src, "Cube", [KEY], tmp_path / "out") == (0, 1)
+    assert not list((tmp_path / "out" / "Cube").glob("*.3mf"))
