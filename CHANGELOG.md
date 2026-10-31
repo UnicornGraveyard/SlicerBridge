@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 (2026-10-30)
 
 - The MCP server's read-only tools state all four behaviour hints (not destructive, idempotent, as well as
   read-only and closed to the network), as `convert_model` already did. A client may read a missing hint as its
@@ -30,6 +30,9 @@
   refusal. The three engines read what a slicer says it won't load with one helper (`refused_settings`).
 - The U1's file takes a sliced source's palette from its project settings, as the other engines and the checks
   do, not from `slice_info.config`, which lists the colors as they were when it was sliced.
+- [The checks](docs/checks.md#what-the-checks-share-with-the-engines) say which of them share the engine's
+  tower geometry: check 13, slicing the file, is the one that measures the tower independently. CI now runs the
+  orca engine's write path, read-back and tall-tower rebuild, with a stand-in for OrcaSlicer.
 
 ## 0.4.1 (2026-10-29)
 
