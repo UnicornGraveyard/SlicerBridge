@@ -734,27 +734,27 @@ wheels = [
 
 [[package]]
 name = "slicerbridge"
-version = "0.4.1"
+version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
     { name = "mcp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5f/4c/6cfda8b8c6b091a61796b7d2d7f0adc688e2b08e684ca59230ad824872a2/slicerbridge-0.4.1.tar.gz", hash = "sha256:47c72acf236c0166e5dc4b6b57585f26b789fc69b50312dff2ad2123765d1fad", size = 735495, upload-time = "2026-10-29T18:45:39.876Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/0b/3a250e1ca0345eb865ad6412b41381b5f0f18f3a1b645a62635aed23bffb/slicerbridge-0.4.2.tar.gz", hash = "sha256:6264d9df437ce737d7a2c798f3d47926e2d32b1a4d1b47ee82977758405c4f9d", size = 742698, upload-time = "2026-10-31T03:42:21.834Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/12/9344479b07433739a14c738899cfc2f49d3abd805cce01c4d0cac87421ff/slicerbridge-0.4.1-py3-none-any.whl", hash = "sha256:2dbf97a1ceb7cf1d45ac8f53ec19dd35e62b09d09388cc15565d8118aceb15ca", size = 728145, upload-time = "2026-10-29T18:45:37.844Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/02/1a251a0223517b5745303f4109df1ef7ca8c3296ae9eac6b59a447f42098/slicerbridge-0.4.2-py3-none-any.whl", hash = "sha256:cd3ccdc160c3112b81019b846fabfddf4971d1cff3f1534abe3552d089873761", size = 730408, upload-time = "2026-10-31T03:42:20.172Z" },
 ]
 
 [[package]]
 name = "slicerbridge-claude-plugin"
-version = "0.4.1"
+version = "0.4.2"
 source = { virtual = "." }
 dependencies = [
     { name = "slicerbridge" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "slicerbridge", specifier = "==0.4.1" }]
+requires-dist = [{ name = "slicerbridge", specifier = "==0.4.2" }]
 
 [[package]]
 name = "sse-starlette"
