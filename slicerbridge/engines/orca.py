@@ -54,7 +54,7 @@ from ..carry import carry_print_settings
 from ..checks import orca as verify
 from ..errors import Refusal
 from ..output import land, partial, withdraw
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
+from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, refused_settings, run_slicer
 from ..source import palette
 
 PAINT = re.compile(rb'( paint_color=")([0-9A-Fa-f]+)(")')
@@ -765,10 +765,9 @@ def read_back(key: str, settings: dict) -> tuple[dict, list[str]]:
                                   f"({READ_BACK_LIMIT // 60} min each)") from None
         back = tmp / "out" / "back.3mf"
         if run.returncode != 0 or not back.exists():
-            log = (run.stdout + run.stderr).splitlines()
-            errors = [ln.strip() for ln in log if re.match(r"^\s*[a-z_0-9]+: .* not in range", ln)]
-            errors += [m.group(1) for ln in log for m in [re.search(r"Invalid value provided for parameter (\S+?):", ln)] if m]
-            return {}, errors or [f"exit {run.returncode}: " + " | ".join(log[-3:])]
+            log = run.stdout + run.stderr
+            errors = [f"{k}: {said}" for k, said in refused_settings(log).items()]
+            return {}, errors or [f"exit {run.returncode}: " + " | ".join(log.splitlines()[-3:])]
         with zipfile.ZipFile(back) as z:
             return json.loads(z.read("Metadata/project_settings.config")), []
 

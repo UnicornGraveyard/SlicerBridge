@@ -42,11 +42,11 @@ settings that shape the print are carried whatever it marks ([carry.py](../slice
 accelerations and line widths are tuned to the source's printer, and stay the target's unless marked. Prusa files
 take what PrusaSlicer has a setting for, and the Snapmaker U1 the same as the others. Then the target's slicer
 reads the whole file back: a carried
-value it doesn't take keeps the printer's own, and the output says so. The U1's file has no slicer to read it
-back while it's written, so a carried -1 (Bambu Studio's auto, which some Snapmaker Orca versions won't load)
-keeps the template's value, and with `--slice` any setting Snapmaker Orca won't load keeps the template's and
-the file is sliced again. A value the printer owns (its prime tower, purge volumes, machine limits) is never
-carried.
+value it doesn't take keeps the printer's own, and the output says so. The U1's file is read back in Snapmaker
+Orca whenever it's installed, sliced or not (a few seconds): a carried setting it won't load keeps the template's.
+A carried -1 (Bambu Studio's auto, which Snapmaker Orca 2.4.1 still won't load for some settings, and older
+versions for more) keeps the template's value whatever Snapmaker Orca is on the machine, since the downloader's
+may be older. A value the printer owns (its prime tower, purge volumes, machine limits) is never carried.
 
 ## Tall prints
 

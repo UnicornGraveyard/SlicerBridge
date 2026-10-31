@@ -56,6 +56,10 @@ And whatever the source:
     tower, with a warning to slice it in Snapmaker Orca and look. The minimums are written
     out in the check, not taken from the engine.
 
+Whenever Snapmaker Orca is installed, sliced or not, the file's settings are read back in it first, on the template's
+cube: a carried setting it won't load keeps the template's, and one of the template's or the tall tower's
+it won't load fails the file.
+
 With `--slice`, check 13 as above, in Snapmaker Orca. Its command line refuses every project as newer than itself,
 its own included, so it's given `--allow-newer-file`. Without Snapmaker Orca the file is still written, unsliced,
 with a warning. So is a file its command line crashes on, twice: its app slices files the command line crashes on

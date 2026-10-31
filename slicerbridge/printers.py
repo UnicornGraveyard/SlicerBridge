@@ -122,6 +122,22 @@ def run_slicer(cmd: list, timeout: int, cwd: Path | str | None = None) -> subpro
                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def refused_settings(log: str) -> dict[str, str]:
+    """{setting: what the slicer said} for every setting it won't load, anywhere in its log.
+
+    OrcaSlicer and its forks say "tree_support_wall_count: -1 not in range [0,2]", PrusaSlicer
+    "Value out of range: wipe_tower_brim_width", and both "Invalid value provided for parameter
+    brim_width: ...". The first word about a setting is kept.
+    """
+    found: dict[str, str] = {}
+    for line in log.splitlines():
+        if m := re.match(r"\s*(\w+): (.*\bnot in range\b.*)", line):
+            found.setdefault(m.group(1), m.group(2).strip())
+        elif m := re.search(r"(?:Invalid value provided for parameter|Value out of range:) (\w+)", line):
+            found.setdefault(m.group(1), line[m.start():].strip())
+    return found
+
+
 # Characters Windows refuses in a file name: a file made on a Mac is still opened on Windows.
 UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 

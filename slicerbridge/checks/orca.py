@@ -67,7 +67,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import templates as templates_build
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, run_slicer
+from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, refused_settings, run_slicer
 from . import u1
 
 
@@ -83,9 +83,6 @@ CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
 # CLI_GCODE_PATH_IN_UNPRINTABLE_AREA (-102): a brim, skirt or tower past the bed's
 # printable area, as a model too big for its bed with them would be.
 UNPRINTABLE_EXITS = {-102, 2**32 - 102, 256 - 102}
-# A setting the slicer won't load, as OrcaSlicer and its forks say it ("tree_support_wall_count:
-# -1 not in range [0,2]"), anywhere in the log.
-OUT_OF_RANGE = re.compile(r"(\w+): (\S+) not in range")
 AUTO_MODEL_BRIM = 12.0  # mm; see outline_reach()
 # The Anycubic Kobra X's ACE Pro block in its color-change G-code, and the guard
 # Anycubic Slicer Next needs nested inside it (engines/orca.py, guard_ace).
@@ -884,7 +881,7 @@ class Slice:
     slicer: str                                    # the slicer's name
     exit: int = 0                                  # the last run's exit status
     retried: int | None = None                     # the exit status of a crash that got one more try
-    refused: dict = field(default_factory=dict)    # {setting: value} it won't load, from the whole log
+    refused: dict = field(default_factory=dict)    # {setting: what it said} it won't load, from the whole log
     tail: list = field(default_factory=list)       # the log's last lines, for a slice that failed
     scales: dict = field(default_factory=dict)     # {plate number: scale} of the scaled copy sliced
     plates: list = field(default_factory=list)     # (plate name, G-code MB, gcode_facts()) per plate
@@ -993,7 +990,7 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
                                        + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
         result.exit, result.scales = run.returncode, scales
         if run.returncode != 0:
-            result.refused = dict(OUT_OF_RANGE.findall("\n".join(log)))
+            result.refused = refused_settings("\n".join(log))
             tail = [ln for ln in log if "shader" not in ln and "gl_FragColor" not in ln and "ERROR: 0:" not in ln][-6:]
             # Bambu Studio says why in result.json and nothing on the console.
             reason_file = Path(tmp) / "result.json"

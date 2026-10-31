@@ -74,3 +74,18 @@ def test_homebrew_never_installs_over_a_path_someone_set_or_a_slicer_that_is_the
     orca.binary.touch()
     P.ensure_installed(orca)
     assert calls == []
+
+
+def test_what_a_slicer_wont_load_is_read_in_each_slicers_words():
+    from slicerbridge.engines import prusa
+    log = ("[info] loading\nParam values in 3mf/config error: \ntree_support_wall_count: -1 not in range [0,2]\n"
+           "Value out of range: wipe_tower_brim_width\n"
+           "[error] Invalid value provided for parameter brim_width: abc\n"
+           "tree_support_wall_count: 5 not in range [0,2]\nrun found error, exit\n")
+    assert P.refused_settings(log) == {
+        "tree_support_wall_count": "-1 not in range [0,2]",  # OrcaSlicer and its forks; the first word kept
+        "wipe_tower_brim_width": "Value out of range: wipe_tower_brim_width",  # PrusaSlicer
+        "brim_width": "Invalid value provided for parameter brim_width: abc"}
+    check_9 = prusa.Check("9", "PrusaSlicer --info loads it", False, "exit 1", log)
+    assert prusa.refused_key([check_9], {"brim_width", "wipe_tower_brim_width"}) == "wipe_tower_brim_width"
+    assert prusa.refused_key([check_9], {"wall_loops"}) is None
