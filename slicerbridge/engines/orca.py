@@ -34,11 +34,8 @@ import copy
 import gc
 import json
 import math
-import os
 import posixpath
 import re
-import shutil
-import stat
 import subprocess
 import tempfile
 import zipfile
@@ -56,7 +53,9 @@ from .. import templates as templates_build
 from ..carry import carry_print_settings
 from ..checks import orca as verify
 from ..errors import Refusal
-from ..printers import BAMBU_TYPES, LEGACY_STAMPS, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
+from ..output import land, partial, withdraw
+from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, STAMP, TEMPLATES, out_path, run_slicer
+from ..source import palette
 
 PAINT = re.compile(rb'( paint_color=")([0-9A-Fa-f]+)(")')
 # Filament numbers in model_settings.config: part/object extruders, and settings
@@ -157,19 +156,6 @@ def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
     row, col = divmod(index, cols)
     width, depth = bed.plate or (bed.width, bed.depth)
     return col * width * PLATE_STRIDE, -row * depth * PLATE_STRIDE
-
-
-def parse_filaments(path: Path) -> list[dict]:
-    """The source's palette, from project_settings.config.
-
-    Projects are often saved unsliced, so slice_info.config may be
-    an empty stub; project_settings.config always carries the palette.
-    """
-    with zipfile.ZipFile(path) as z:
-        cfg = json.loads(z.read("Metadata/project_settings.config").decode())
-    colors, types = cfg.get("filament_colour", []), cfg.get("filament_type", [])
-    return [{"id": str(i + 1), "type": types[i] if i < len(types) else "PLA", "color": c}
-            for i, c in enumerate(colors)]
 
 
 # ------------------------------------------------------------- geometry ----
@@ -549,7 +535,7 @@ def retransform_items(xml: str, transforms: dict) -> str:
 
 def plan(slug: str, src: Path, used: list[int]) -> tuple[list[dict], dict]:
     """(filaments in order, {old slot: new filament}), or exit refusing."""
-    fils = parse_filaments(src)
+    fils = palette(src)
     if not fils:
         raise Refusal(f"could not parse filaments from {src}")
     by_id = {int(f["id"]): f for f in fils}
@@ -856,31 +842,6 @@ def remap_model_settings(text: str, mapping: dict, used: list[int]) -> str:
 
 # -------------------------------------------------------------- convert ----
 
-def unhide(path: Path) -> None:
-    """Clear macOS's hidden flag on a finished file.
-
-    iCloud's Documents sync flags any dot-named file under ~/Documents as hidden
-    within seconds, and the flag survives a rename. Temp files here aren't
-    dot-named; this is the guard.
-    """
-    flags = getattr(os.stat(path), "st_flags", 0)
-    if flags & stat.UF_HIDDEN:
-        os.chflags(path, flags & ~stat.UF_HIDDEN)
-
-
-def ours(path: Path) -> bool:
-    """Whether SlicerBridge wrote this file (its zip comment), so it may be replaced."""
-    with zipfile.ZipFile(path) as z:
-        return z.comment.startswith((STAMP, *LEGACY_STAMPS))
-
-
-def withdraw(path: Path, why: str) -> None:
-    """Remove SlicerBridge's earlier file for a model/printer that no longer passes."""
-    if path.exists() and ours(path):
-        path.unlink()
-        print(f"       removed the earlier {path.name}: {why}")
-
-
 @dataclass
 class Model:
     """What one source is, worked out once for every printer."""
@@ -910,7 +871,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
     printer = PRINTERS[key]
     final = out_path(out, m.slug, key, prefix, suffix)
     if len(m.used) > printer.tools:
-        by_id = {int(f["id"]): f for f in parse_filaments(m.src)}
+        by_id = {int(f["id"]): f for f in palette(m.src)}
         lines = "\n".join(f"       {s:>2}  {by_id[s]['type']:8} {by_id[s]['color']}" for s in m.used)
         raise Refusal(
             f"REFUSING {m.slug} for the {printer.label}: it uses {len(m.used)} filament slots; the "
@@ -956,7 +917,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
         identity = all(old == new for old, new in m.mapping.items())
         final.parent.mkdir(parents=True, exist_ok=True)
-        tmp = final.with_name(f"partial - {final.name}")  # not dot-named: macOS would flag it hidden
+        tmp = partial(final)
 
         def recode(match: re.Match) -> bytes:
             code = match.group(2)
@@ -1007,24 +968,13 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         si, sp, sw = verify.slice_check(tmp, key).text()
         info, problems, warnings = info + si, problems + sp, warnings + sw
     if problems:
-        tmp.unlink()
         print(f"  FAIL {m.slug:12} {printer.label}")
         for p in problems:
             print(f"       !! {p}")
         withdraw(final, "it no longer passes")
         return False
 
-    if final.exists() and not ours(final):
-        prev = final.parent / "_previous"
-        prev.mkdir(exist_ok=True)
-        dest, n = prev / final.name, 2
-        while dest.exists():  # never overwrite an earlier backup either
-            dest = prev / f"{final.stem} ({n}){final.suffix}"
-            n += 1
-        shutil.move(str(final), str(dest))
-        print(f"       moved the existing {final.name} (not made by SlicerBridge) to _previous/{dest.name}")
-    tmp.replace(final)
-    unhide(final)
+    land(tmp, final)
 
     mb = final.stat().st_size / 1e6
     print(f"  ok   {m.slug:12} {printer.label:18} -> {final.parent.name}/{final.name}  ({mb:.0f} MB)"
@@ -1068,7 +1018,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
 def inspect(src: Path, keys: list[str]) -> list[str]:
     """Lines describing a source: its palette, the slots it uses, each plate's size and fit on each bed."""
     lines = []
-    by_id = {int(f["id"]): f for f in parse_filaments(src)}
+    by_id = {int(f["id"]): f for f in palette(src)}
     used, plates = analyze(src.stem, src)
     lines.append(f"palette {len(by_id)}, uses {len(used)}: " + ", ".join(f"{s}->{i}" for i, s in enumerate(used, start=1)))
     for s in used:

@@ -35,11 +35,8 @@ from __future__ import annotations
 import gc
 import json
 import math
-import os
 import posixpath
 import re
-import shutil
-import stat
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -55,7 +52,9 @@ from .. import tall
 from ..carry import carry_print_settings
 from ..checks import orca as orca_check, u1 as u1check
 from ..errors import Refusal
-from ..printers import LEGACY_STAMPS, SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path
+from ..output import land, partial, withdraw
+from ..printers import SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path
+from ..source import palette
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "u1"  # bl2u1's U1 templates (GPLv3)
 TARGET_FILAMENTS = 4
@@ -204,42 +203,6 @@ def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
     cols = round(v) + 1 if v > round(v) else round(v)
     row, col = divmod(index, cols)
     return col * bed.width * PLATE_STRIDE, -row * bed.depth * PLATE_STRIDE
-
-
-def parse_filaments(path: Path) -> list[dict]:
-    """Palette for the file.
-
-    IMPORTANT: these projects are saved from Bambu Studio *unsliced*, so
-    Metadata/slice_info.config is an empty <config/> stub with no <filament>
-    nodes. bl2u1 reads the palette from slice_info and, finding nothing,
-    silently pads the output with 4 dummy WHITE PLA filaments -- which destroys
-    the ColorStacking while producing a file that still opens fine.
-
-    So: read slice_info if it's actually populated, otherwise fall back to
-    project_settings.config, which always carries filament_colour/filament_type.
-    """
-    out: list[dict] = []
-    with zipfile.ZipFile(path) as z:
-        names = z.namelist()
-        if "Metadata/slice_info.config" in names:
-            root = ET.fromstring(z.read("Metadata/slice_info.config").decode())
-            for f in root.findall(".//filament"):
-                out.append({
-                    "id": f.get("id"),
-                    "type": f.get("type", "PLA"),
-                    "color": f.get("color", "#FFFFFF"),
-                })
-        if not out and "Metadata/project_settings.config" in names:
-            cfg = json.loads(z.read("Metadata/project_settings.config").decode())
-            colors = cfg.get("filament_colour", [])
-            types = cfg.get("filament_type", [])
-            for i, c in enumerate(colors):
-                out.append({
-                    "id": str(i + 1),
-                    "type": types[i] if i < len(types) else "PLA",
-                    "color": c,
-                })
-    return out
 
 
 # ------------------------------------------------------------- geometry ----
@@ -434,7 +397,7 @@ def retransform_items(xml: str, transforms: dict) -> str:
 
 def plan(slug: str, src: Path, used: list[int]) -> tuple[list[dict], dict]:
     """(filaments in extruder order, {old slot: new extruder}), or exit refusing."""
-    fils = parse_filaments(src)
+    fils = palette(src)
     if not fils:
         raise Refusal(f"could not parse filaments from {src}")
     by_id = {int(f["id"]): f for f in fils}
@@ -476,19 +439,6 @@ def remap_model_settings(text: str, mapping: dict, used: list[int]) -> str:
 
 
 # -------------------------------------------------------------- convert ----
-
-def unhide(path: Path) -> None:
-    """Clear macOS's hidden flag on a finished file.
-
-    iCloud's Documents sync flags any dot-named file or folder under
-    ~/Documents as hidden within about 2 seconds,
-    and the flag survives a rename. Temp files are no longer dot-named; this is
-    the guard in case anything else sets it.
-    """
-    flags = getattr(os.stat(path), "st_flags", 0)
-    if flags & stat.UF_HIDDEN:
-        os.chflags(path, flags & ~stat.UF_HIDDEN)
-
 
 # Bambu Studio's "auto" for some settings is -1, where some Snapmaker Orca versions start
 # the range at 0 and won't load the file ("raft_first_layer_expansion: -1 not in range
@@ -573,14 +523,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
                     break
         placements = [place(slug, p, len(plates), bed) for p in plates]
     except Refusal:
-        if out_path.exists() and ours(out_path):
-            out_path.unlink()
-            print(f"  removed the earlier {out_path.name}: it no longer passes")
+        withdraw(out_path, "it no longer passes")
         raise
     transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
     identity = all(old == new for old, new in mapping.items())
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out_path.with_name(f"partial - {out_path.name}")  # not dot-named: macOS would flag it hidden
+    tmp = partial(out_path)
 
     recoded: dict[bytes, bytes] = {}
 
@@ -725,23 +673,10 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         tmp.unlink()
         if wont:
             raise SettingsRefused(wont)
-        if out_path.exists() and ours(out_path):
-            out_path.unlink()
+        withdraw(out_path, "it no longer passes")
         raise Refusal(f"{slug} for the {U1_LABEL} failed its checks:\n" + "\n".join(f"   {p}" for p in problems))
 
-    # Never overwrite a file SlicerBridge didn't write -- move it aside instead.
-    if out_path.exists():
-        if not ours(out_path):
-            prev = out_path.parent / "_previous"
-            prev.mkdir(exist_ok=True)
-            dest, n = prev / out_path.name, 2
-            while dest.exists():  # never overwrite an earlier backup either
-                dest = prev / f"{out_path.stem} ({n}){out_path.suffix}"
-                n += 1
-            shutil.move(str(out_path), str(dest))
-            print(f"  moved the existing {out_path.name} (not made by SlicerBridge) to _previous/{dest.name}")
-    tmp.replace(out_path)
-    unhide(out_path)
+    land(tmp, out_path)
 
     mb = out_path.stat().st_size / 1e6
     slots = ",".join(map(str, used))
@@ -770,12 +705,6 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     return out_path
 
 
-def ours(path: Path) -> bool:
-    """Whether SlicerBridge wrote this file (its zip comment), so it may be replaced."""
-    with zipfile.ZipFile(path) as z:
-        return z.comment.startswith((STAMP, *LEGACY_STAMPS))
-
-
 def inspect(src: Path) -> list[str]:
     """Lines describing how a source fits the U1: used slots and each plate's fit."""
     bed = Bed.of(load_template(False))
@@ -795,16 +724,6 @@ def inspect(src: Path) -> list[str]:
     return lines
 
 
-def withdraw(out_path: Path) -> None:
-    """After a failure: no partial file left behind, and no earlier file of ours standing in for this run."""
-    partial = out_path.with_name(f"partial - {out_path.name}")
-    if partial.exists():
-        partial.unlink()
-    if out_path.exists() and ours(out_path):
-        out_path.unlink()
-        print(f"  removed the earlier {out_path.name}: it no longer passes")
-
-
 def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
             suffix: str = "") -> tuple[int, int]:
     """Write `name`'s U1 file into out/<name>/; returns (written, refused or failed).
@@ -819,11 +738,11 @@ def convert(src: Path, name: str, keys: list[str], out: Path, prefix: str = "", 
                 refused.update(e.refused)
     except Refusal as e:
         print(f"  SKIP {name} {U1_LABEL}\n!! {e}")
-        withdraw(named_path(out, name, "u1", prefix, suffix))
+        withdraw(named_path(out, name, "u1", prefix, suffix), "it was refused")
         return 0, 1
     except Exception as e:  # a bug: this printer fails, the other engines still run
         print(f"  FAIL {name} {U1_LABEL}\n!! {type(e).__name__}: {e}")
-        withdraw(named_path(out, name, "u1", prefix, suffix))
+        withdraw(named_path(out, name, "u1", prefix, suffix), "it failed")
         return 0, 1
     finally:
         gc.collect()

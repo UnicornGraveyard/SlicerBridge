@@ -20,6 +20,12 @@
   shows, so the U1's file is written again with the template's value instead of refused. Check 13's result is
   kept as what happened (exit status, crash, refused settings, each plate's G-code facts) and worded only when
   it's printed.
+- A Prusa printer that is refused or fails partway takes back SlicerBridge's earlier files for it and leaves no
+  `partial - …` file, and an OrcaSlicer-family printer that fails partway leaves no `partial - …` file either.
+  The three engines land a file, move one they didn't write to `_previous/`, and take back their own with one
+  module (`output.py`), where each had its own copy.
+- The U1's file takes a sliced source's palette from its project settings, as the other engines and the checks
+  do, not from `slice_info.config`, which lists the colors as they were when it was sliced.
 
 ## 0.4.1 (2026-10-29)
 

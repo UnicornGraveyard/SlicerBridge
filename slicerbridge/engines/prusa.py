@@ -30,7 +30,6 @@ import os
 import posixpath
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -52,7 +51,9 @@ from .._vendor.panda2prusa.writer import write_prusa_3mf
 from .. import tall
 from ..carry import marked_changed, print_keys
 from ..errors import Refusal
-from ..printers import LEGACY_STAMPS, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, out_name, run_slicer
+from ..output import land, partial, withdraw
+from ..printers import (PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, label_of,
+                        name_suffix, out_name, run_slicer)
 
 PROFILES = cache_dir() / "prusa-profiles"
 # PrusaSlicer runs against this private settings folder, never your own, so
@@ -1037,17 +1038,11 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
     names = [out_name(src.display, printer_key, prefix, f" - Plate {plate.number}" if multi else "", suffix)
              for plate in src.plates]
 
-    # Every decision first: nothing is written for a model that would be refused,
-    # and an older file for it doesn't get to stand in for this run.
-    try:
-        mapping = decide_mapping(src, printer, explicit)
-        check_filament_types(src, mapping)
-        placements = [plan_placement(src, plate, bed) for plate in src.plates]
-    except Refusal:
-        for n in names:
-            if (OUT / n).exists() and ours(OUT / n):
-                (OUT / n).unlink()
-        raise
+    # Every decision first: nothing is written for a model that would be refused (and
+    # convert() takes back an older file for it, so it doesn't stand in for this run).
+    mapping = decide_mapping(src, printer, explicit)
+    check_filament_types(src, mapping)
+    placements = [plan_placement(src, plate, bed) for plate in src.plates]
     # A tall print gets the heavier wipe tower (tall.py) if every plate's tower finds a
     # spot for its wider brim. PrusaSlicer's tower has no speed of its own to slow, so
     # where there's no room it keeps the profile's, with a warning.
@@ -1074,8 +1069,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
     rows = []
     for plate, pl, name in zip(src.plates, placements, names):
         final = OUT / name
-        # Not dot-named (macOS would flag it hidden), and still ending in .3mf: PrusaSlicer goes by extension.
-        tmp = OUT / f"partial - {name}"
+        tmp = partial(final)
         center, tower, _clear = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1), brim)
         apply_placement(plate, pl, bed, center)
         while True:
@@ -1125,23 +1119,11 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
                 print(f"       settings: {n}")
 
         if ok:
-            if final.exists() and not ours(final):
-                prev = final.parent / "_previous"
-                prev.mkdir(exist_ok=True)
-                dest, n = prev / final.name, 2
-                while dest.exists():  # never overwrite an earlier backup either
-                    dest = prev / f"{final.stem} ({n}){final.suffix}"
-                    n += 1
-                shutil.move(str(final), str(dest))
-                print(f"       moved the existing {final.name} (not made by SlicerBridge) to _previous/{dest.name}")
-            tmp.replace(final)
-            unhide(final)
+            land(tmp, final)
             mb = final.stat().st_size / 1e6
             print(f"       saved {mb:.0f} MB")
         else:
-            tmp.unlink(missing_ok=True)
-            if final.exists() and ours(final):
-                final.unlink()
+            withdraw(final, "it no longer passes")
             print("       !! verification failed -- output deleted, nothing shipped for this plate")
         passed = sum(c.ok for c in checks)
         rows.append(Row(
@@ -1157,25 +1139,6 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         ))
     return rows
 
-
-def unhide(path: Path) -> None:
-    """Clear macOS's hidden flag on a finished file.
-
-    iCloud's Documents sync flags any dot-named file or folder under
-    ~/Documents as hidden within about 2 seconds,
-    and the flag survives a rename. Temp files are no longer dot-named; this is
-    the guard in case anything else sets it.
-    """
-    flags = getattr(os.stat(path), "st_flags", 0)
-    if flags & stat.UF_HIDDEN:
-        os.chflags(path, flags & ~stat.UF_HIDDEN)
-
-
-
-def ours(path: Path) -> bool:
-    """Whether SlicerBridge wrote this file (its zip comment), so it may be replaced."""
-    with zipfile.ZipFile(path) as z:
-        return z.comment.startswith((STAMP, *LEGACY_STAMPS))
 
 def print_table(rows: list, refused: list) -> None:
     print("\n| model | used slots -> mapped | plates | painted faces in/out | checks | output file |")
@@ -1210,6 +1173,15 @@ def inspect(path: Path, keys: list[str]) -> list[str]:
     return lines
 
 
+def printer_files(folder: Path, name: str, key: str, prefix: str = "", suffix: str = "") -> list[Path]:
+    """The files out_name() names for `name` on printer `key` in `folder`, one per plate or one for
+    a single plate, finished or partial: what a refusal takes back, whatever the plates were."""
+    own = re.compile(re.escape(f"{prefix}{name} - {label_of(key)}") + r"( - Plate \d+)?"
+                     + re.escape(f"{name_suffix(suffix)}.3mf"))
+    names = {f.name.removeprefix("partial - ") for f in folder.glob("*.3mf")} if folder.is_dir() else set()
+    return [folder / n for n in sorted(names) if own.fullmatch(n)]
+
+
 def convert(path: Path, name: str, keys: list[str], out: Path, prefix: str = "", slice_it: bool = False,
             explicit: Optional[dict] = None, suffix: str = "") -> tuple[int, int]:
     """Write `name`'s files for each Prusa printer key into out/<name>/; returns (written, refused or failed)."""
@@ -1219,12 +1191,16 @@ def convert(path: Path, name: str, keys: list[str], out: Path, prefix: str = "",
         try:
             src = load_source(path.stem, name, path)
             rows += convert_one(src, key, explicit, slice_it, out, prefix, suffix)
-        except Refusal as e:
+        except Refusal as e:  # a refused printer writes nothing, and takes back what it wrote before
             print(f"\n  SKIP {name} {PRINTERS[key].label}\n!! {e}")
             refused.append((f"{name} {PRINTERS[key].label}", str(e)))
+            for f in printer_files(out / name, name, key, prefix, suffix):
+                withdraw(f, "it was refused")
         except Exception as e:  # a bug or a slicer gone wrong: this printer fails, the rest still get theirs
             print(f"\n  FAIL {name} {PRINTERS[key].label}\n!! {type(e).__name__}: {e}")
             refused.append((f"{name} {PRINTERS[key].label}", f"{type(e).__name__}: {e}"))
+            for f in printer_files(out / name, name, key, prefix, suffix):
+                withdraw(f, "it failed")
         src = None
         gc.collect()
     print_table(rows, refused)
