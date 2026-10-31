@@ -495,11 +495,6 @@ def unhide(path: Path) -> None:
 # [0,2147483647]", "tree_support_wall_count: -1 not in range [0,2]": Gatefang, 2026-10-29).
 # A carried -1 where the template has a value of its own keeps the template's.
 AUTO = "-1"
-OUT_OF_RANGE = re.compile(r"(\w+): (\S+) not in range")
-# Snapmaker Orca 2.4.0's command line crashed (exit -11, twice) slicing Gatefang's file,
-# which its app sliced fine (2026-10-29); 2.4.1's slices the same file (2026-10-30). A crash
-# is the command line's, not the file's.
-CRASHED = re.compile(r"didn't slice it \(exit (-?\d+)\)")
 
 
 class SettingsRefused(Refusal):
@@ -518,26 +513,26 @@ def not_carried(carried: dict, u1: dict, refused: dict) -> dict:
     return kept
 
 
-def slice_check(f: Path) -> tuple[list[str], list[str], list[str]]:
-    """(info, problems, warnings) from slicing `f` in Snapmaker Orca: checks/orca.py's check 13.
+def slice_check(f: Path) -> orca_check.Slice:
+    """Slice `f` in Snapmaker Orca: checks/orca.py's check 13.
 
     On a Mac a missing Snapmaker Orca is installed with Homebrew first; without one the
     file is still checked, just not sliced, and the warning says how to get it. When its
     command line crashes (again, on check 13's second try), the file is kept, with a warning
-    to slice it in the app: what it refuses is still a problem.
+    to slice it in the app: what it refuses is still a problem. Snapmaker Orca 2.4.0's
+    command line crashed (exit -11, twice) slicing Gatefang's file, which its app sliced
+    fine (2026-10-29); 2.4.1's slices the same file (2026-10-30). A crash is the command
+    line's, not the file's.
     """
     slicer = SLICERS["snapmaker"]
     ensure_installed(slicer)
     if not slicer.installed:
-        return [], [], [f"not sliced: {not_found(slicer)}"]
-    info, problems, warnings = orca_check.slice_check(f, "u1")
-    crashes = [p for p in problems if (m := CRASHED.search(p)) and int(m.group(1)) in orca_check.CRASHES]
-    if crashes:
-        code = CRASHED.search(crashes[0]).group(1)
-        warnings = [w for w in warnings if "crashed" not in w] + [
-            f"not sliced: Snapmaker Orca's command line crashed on it (exit {code}), twice. Its app slices "
-            f"files its command line crashes on: open it there and slice it to check"]
-    return info, [p for p in problems if p not in crashes], warnings
+        return orca_check.Slice(slicer.name, skipped=f"not sliced: {not_found(slicer)}")
+    result = orca_check.slice_check(f, "u1")
+    if result.crashed:
+        result.crash_note = (f"not sliced: Snapmaker Orca's command line crashed on it (exit {result.exit}), twice. "
+                             f"Its app slices files its command line crashes on: open it there and slice it to check")
+    return result
 
 
 def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "",
@@ -720,14 +715,14 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
 
     # The checks, before anything lands in the output folder.
     info, problems = u1check.audit(tmp, src)
-    sliced, slice_warnings = [], []
+    sliced, slice_warnings, wont = [], [], {}
     if slice_it and not problems:
-        sliced, problems, slice_warnings = slice_check(tmp)
+        result = slice_check(tmp)
+        sliced, problems, slice_warnings = result.text()
+        # A carried value this Snapmaker Orca won't load: written again with the template's.
+        wont = {k: f"Snapmaker Orca won't take {v}" for k, v in result.refused.items() if k in carried}
     if problems:
         tmp.unlink()
-        # A carried value this Snapmaker Orca won't load: written again with the template's.
-        wont = {k: f"Snapmaker Orca won't take {v}" for line in problems
-                for k, v in OUT_OF_RANGE.findall(line) if k in carried}
         if wont:
             raise SettingsRefused(wont)
         if out_path.exists() and ours(out_path):

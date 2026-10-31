@@ -16,6 +16,10 @@
 - The stray `uv.lock` at the repository's root is gone: nothing used it. The plugin's own lock stays.
 - Snapmaker Orca 2.4.1's command line slices Gatefang's U1 file, which 2.4.0's crashed on (exit -11) and
   still does. The docs say so.
+- A setting Snapmaker Orca won't load is found anywhere in its log, not only in the last six lines check 13
+  shows, so the U1's file is written again with the template's value instead of refused. Check 13's result is
+  kept as what happened (exit status, crash, refused settings, each plate's G-code facts) and worded only when
+  it's printed.
 
 ## 0.4.1 (2026-10-29)
 

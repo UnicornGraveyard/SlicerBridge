@@ -182,7 +182,7 @@ def cmd_verify(a: argparse.Namespace) -> int:
             try:
                 info, problems, warnings = orca_check.audit(f, src, key)
                 if a.slice and not problems:
-                    si, sp, sw = orca_check.slice_check(f, key)
+                    si, sp, sw = orca_check.slice_check(f, key).text()
                     info, problems, warnings = info + si, problems + sp, warnings + sw
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
@@ -190,7 +190,7 @@ def cmd_verify(a: argparse.Namespace) -> int:
             try:
                 (info, problems), warnings = u1_check.audit(f, src), []
                 if a.slice and not problems:
-                    si, sp, sw = _engine("u1").slice_check(f)
+                    si, sp, sw = _engine("u1").slice_check(f).text()
                     info, problems, warnings = info + si, problems + sp, warnings + sw
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []

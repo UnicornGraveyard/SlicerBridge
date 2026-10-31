@@ -75,7 +75,7 @@ def check(f: Path) -> tuple[str | None, list[str], list[str], list[str]]:
         return None, [], [], []
     if not slicer.installed:
         return slicer.name, [], [], [f"{slicer.name} isn't installed at {slicer.app}: skipped"]
-    info, problems, warnings = verify.slice_check(f, key, slicer)
+    info, problems, warnings = verify.slice_check(f, key, slicer).text()
     foreign = foreign_presets(f, slicer)
     if foreign:
         warnings.append(f"not among {slicer.name}'s own presets, so its menu shows the file's names "

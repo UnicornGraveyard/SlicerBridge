@@ -1004,7 +1004,7 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         likely, carried = {**before_tower, **tower_extra}, {**carried_before_tower, **tower_extra}
         tower_brim = squeezed_brim(tower_brim, tower_extra)
     if slice_it and not problems:
-        si, sp, sw = verify.slice_check(tmp, key)
+        si, sp, sw = verify.slice_check(tmp, key).text()
         info, problems, warnings = info + si, problems + sp, warnings + sw
     if problems:
         tmp.unlink()
@@ -1055,9 +1055,12 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
     worked_around = [k for k, v in SLICER_WORKAROUNDS.items() if base.get(k) not in (None, v)]
     if worked_around:
         print(f"       {', '.join(worked_around)} off: {SLICERS[printer.slicer].name} hangs on it")
+    # What the lines above said already, in their own words: a plate too big for the bed, the
+    # slower tower only, and a tower crowded beside the model.
     crowded = any(pl.crowded for pl in placements if pl.fits)
+    said = {verify.TOO_BIG, verify.TOWER_BASE} | ({verify.TOWER_SPOT} if crowded else set())
     for w in warnings:
-        if "bigger than" not in w and "heavier tower base has no room" not in w and not (crowded and "may touch" in w):  # said above
+        if getattr(w, "topic", "") not in said:
             print(f"       ⚠ {w}")
     return True
 

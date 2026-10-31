@@ -40,15 +40,16 @@ def snapmaker(tmp_path, monkeypatch):
         with zipfile.ZipFile(cmd[-1]) as z:
             cfg = json.loads(z.read("Metadata/project_settings.config"))
         wont = [f"{k}: {v} not in range [0,5]" for k, v in fake.refuses.items() if cfg.get(k) == v]
-        if wont:  # as Snapmaker Orca says it
+        if wont:  # as Snapmaker Orca says it, and then `noise` lines more
             return check.subprocess.CompletedProcess(cmd, 238, "", "run found error, exit\nParam values in "
-                                                     "3mf/config error: \n" + "\n".join(wont))
+                                                     "3mf/config error: \n" + "\n".join(wont) + "".join(
+                                                         f"\n[info] cleaning up {i}" for i in range(fake.noise)))
         for n, (x, y) in enumerate(zip(cfg["wipe_tower_x"], cfg["wipe_tower_y"]), start=1):
             (check.Path(out) / f"plate_{n}.gcode").write_text(_gcode((float(x), float(y))))
         return check.subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(check, "run_slicer", run)
-    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "app": app})
+    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "noise": 0, "app": app})
     return fake
 
 
@@ -135,3 +136,22 @@ def test_a_crash_in_snapmaker_orcas_command_line_keeps_the_file(project, tmp_pat
     assert "⚠ not sliced: Snapmaker Orca's command line crashed on it (exit -11), twice" in out
     assert out.count("crashed") == 1  # one warning, not check 13's "was run again" as well
     assert (tmp_path / "out" / "Cube" / "Cube - Snapmaker U1.3mf").exists()
+
+
+def test_a_setting_snapmaker_orca_wont_load_is_read_from_its_whole_log(tmp_path, snapmaker, capsys):
+    """Check 13 shows the log's last six lines; the refusal can come before them."""
+    src = bambu_project(tmp_path / "wide.3mf", extra_settings={"brim_width": "6"})
+    snapmaker.refuses, snapmaker.noise = {"brim_width": "6"}, 10
+    assert engine.convert(src, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
+    assert len(snapmaker.runs) == 2  # refused, then sliced without it
+    assert "kept the U1's own brim_width" in capsys.readouterr().out
+
+
+def test_a_crash_that_repeats_fails_check_13_unless_the_engine_excuses_it():
+    s = check.Slice("OrcaSlicer", exit=-11, retried=-11, tail=["boom"])
+    assert s.crashed and s.text() == ([], ["OrcaSlicer didn't slice it (exit -11): boom"],
+                                      ["OrcaSlicer crashed (exit -11) and was run again"])
+    s.crash_note = "not sliced: its command line crashed"
+    assert s.text() == ([], [], ["not sliced: its command line crashed"])
+    assert check.Slice("Snapmaker Orca", skipped="not sliced: not installed").text() == (
+        [], [], ["not sliced: not installed"])

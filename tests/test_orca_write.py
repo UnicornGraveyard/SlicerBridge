@@ -96,6 +96,7 @@ def test_a_tall_plate_gets_the_heaviest_tower_it_has_room_for(tmp_path, slicer, 
     assert set(want) <= set(got["different_settings_to_system"][0].split(";"))
     assert len(slicer.runs) == 1  # read back once: placement's step is check 14's
     assert f"over 100{', but' if step == 2 else ':'}" in (out := capsys.readouterr().out) and name in out
+    assert "heavier tower base has no room" not in out  # check 14's warning: the line above says it
 
 
 def test_a_tower_check_14_finds_room_for_is_rebuilt_at_that_step(tmp_path, slicer, capsys):

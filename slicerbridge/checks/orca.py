@@ -63,6 +63,7 @@ import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import templates as templates_build
@@ -82,6 +83,9 @@ CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
 # CLI_GCODE_PATH_IN_UNPRINTABLE_AREA (-102): a brim, skirt or tower past the bed's
 # printable area, as a model too big for its bed with them would be.
 UNPRINTABLE_EXITS = {-102, 2**32 - 102, 256 - 102}
+# A setting the slicer won't load, as OrcaSlicer and its forks say it ("tree_support_wall_count:
+# -1 not in range [0,2]"), anywhere in the log.
+OUT_OF_RANGE = re.compile(r"(\w+): (\S+) not in range")
 AUTO_MODEL_BRIM = 12.0  # mm; see outline_reach()
 # The Anycubic Kobra X's ACE Pro block in its color-change G-code, and the guard
 # Anycubic Slicer Next needs nested inside it (engines/orca.py, guard_ace).
@@ -93,6 +97,20 @@ BAMBU_LEFTOVERS = re.compile(r"^Metadata/(plate_\d+\.json|filament_sequence\.jso
 # Settings OrcaSlicer keeps one value per plate, or adds on its own when it saves.
 PER_PLATE = {"wipe_tower_x", "wipe_tower_y"}
 
+
+
+class Note(str):
+    """A warning, and what it's about (`topic`), for an engine that says the same in its own words."""
+    topic = ""
+
+    def __new__(cls, text: str, topic: str) -> "Note":
+        note = super().__new__(cls, text)
+        note.topic = topic
+        return note
+
+
+# What a Note can be about.
+TOO_BIG, TOWER_SPOT, TOWER_BASE = "bigger than the bed", "tower may touch", "no room for the heavier base"
 
 def rgba(c: str) -> str:
     c = c.strip().upper()
@@ -455,8 +473,9 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
         if not fits:
             best = max(min(bw / sx, bd / sy), min(bw / sy, bd / sx))
             pct = math.floor(min(best, height / sz) * 1000) / 10
-            warnings.append(f"{name} is bigger than the {label} bed ({sx:.1f} x {sy:.1f} x {sz:.1f} mm): "
-                            f"converted at full size, fits at {pct:g}% or less -- scale it in the slicer to print")
+            warnings.append(Note(f"{name} is bigger than the {label} bed ({sx:.1f} x {sy:.1f} x {sz:.1f} mm): "
+                                 f"converted at full size, fits at {pct:g}% or less -- scale it in the slicer to print",
+                                 TOO_BIG))
             if not (area[0] <= (lo[0] + hi[0]) / 2 <= area[2] and area[1] <= (lo[1] + hi[1]) / 2 <= area[3]
                     and lo[2] >= -0.05):
                 problems.append(f"{name} isn't on its own plate at all")
@@ -479,9 +498,9 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
             tx, ty = float(txs[idx]), float(tys[idx])
             t = tower_rect(cfg, (tx, ty))
             if not tower_clear(z, number, t, footprint, area):
-                warnings.append(f"{name}: the prime tower at {tx:.0f},{ty:.0f} (about {t[2] - t[0]:.0f} x {t[3] - t[1]:.0f} mm) "
-                                f"may touch the model or the bed's edge "
-                                f"-- slice it (--slice) and look")
+                warnings.append(Note(f"{name}: the prime tower at {tx:.0f},{ty:.0f} (about {t[2] - t[0]:.0f} x "
+                                     f"{t[3] - t[1]:.0f} mm) may touch the model or the bed's edge "
+                                     f"-- slice it (--slice) and look", TOWER_SPOT))
     return info, problems, warnings, local
 
 
@@ -547,8 +566,8 @@ def tall_tower(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> tuple
         return [f"tower     : {tallest:.0f} mm tall, heavier prime tower set"], [], []
     if owed:
         return [f"tower     : {tallest:.0f} mm tall, heavier prime tower on its own ribs set (no room for longer ones)"], [], []
-    return [], [], [f"{tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower tower "
-                    f"only -- slice it and give the tower a bigger base if there's room"]
+    return [], [], [Note(f"{tallest:.0f} mm tall, but the heavier tower base has no room at its spot: slower tower "
+                         f"only -- slice it and give the tower a bigger base if there's room", TOWER_BASE)]
 
 
 def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], list[str]]:
@@ -855,12 +874,63 @@ def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict
     return scales
 
 
-def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[str], list[str], list[str]]:
-    """Check 13: (info, problems, warnings) from slicing every plate in the printer's
-    slicer, or in `slicer` (brandcheck.py: the brand's own fork). Key "u1": Snapmaker Orca."""
+@dataclass
+class Slice:
+    """Check 13's outcome, kept as what happened until it's printed (text()).
+
+    `problems` and `warnings` are what the G-code and the log show once it sliced;
+    whether it sliced at all, and a crash's second try, are worded by text().
+    """
+    slicer: str                                    # the slicer's name
+    exit: int = 0                                  # the last run's exit status
+    retried: int | None = None                     # the exit status of a crash that got one more try
+    refused: dict = field(default_factory=dict)    # {setting: value} it won't load, from the whole log
+    tail: list = field(default_factory=list)       # the log's last lines, for a slice that failed
+    scales: dict = field(default_factory=dict)     # {plate number: scale} of the scaled copy sliced
+    plates: list = field(default_factory=list)     # (plate name, G-code MB, gcode_facts()) per plate
+    problems: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    version: str = ""                              # the note that it needed --allow-newer-file
+    skipped: str = ""                              # why it wasn't sliced at all
+    crash_note: str = ""                           # said instead of failing, if its command line crashed
+
+    @property
+    def crashed(self) -> bool:
+        """Its command line crashed, on the second try too."""
+        return self.exit in CRASHES
+
+    def text(self) -> tuple[list[str], list[str], list[str]]:
+        """(info, problems, warnings), as check 13 words them."""
+        if self.skipped:
+            return [], [], [self.skipped]
+        excused = self.crashed and bool(self.crash_note)
+        info = (["sliced    : a copy with " + ", ".join(f"plate {n} at {v * 100:g}%" for n, v in self.scales.items())
+                 + ", as a downloader would scale it"] if self.scales else [])
+        warnings = [self.version] if self.version else []
+        if self.retried is not None and not excused:
+            warnings.append(f"{self.slicer} crashed (exit {self.retried}) and was run again")
+        warnings += self.warnings
+        if self.exit != 0:
+            if excused:
+                return info, [], warnings + [self.crash_note]
+            return info, [f"{self.slicer} didn't slice it (exit {self.exit}): " + " | ".join(self.tail)], warnings
+        for name, mb, facts in self.plates:
+            info.append(f"sliced    : {name} {mb:.0f} MB G-code"
+                        + (f", {facts['time']}" if facts["time"] else "")
+                        + (f", {facts['grams']:.0f} g" if facts["grams"] is not None else "")
+                        + f", tool changes {dict(sorted(facts['tools'].items()))}"
+                        + (f", prime tower {facts['tower'][0]:.0f}..{facts['tower'][2]:.0f} x "
+                           f"{facts['tower'][1]:.0f}..{facts['tower'][3]:.0f}" if facts["tower"] else "")
+                        + (f" ({facts['tower_share']:.0%} of the filament)" if facts["tower_share"] else ""))
+        return info, list(self.problems), warnings
+
+
+def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
+    """Check 13: slice every plate in the printer's slicer, or in `slicer` (brandcheck.py:
+    the brand's own fork). Key "u1": Snapmaker Orca."""
     label = U1_LABEL if key == "u1" else PRINTERS[key].label
     slicer = slicer or SLICERS["snapmaker" if key == "u1" else PRINTERS[key].slicer]
-    info, problems, warnings = [], [], []
+    result = Slice(slicer.name)
     with zipfile.ZipFile(f) as z:
         cfg = json.loads(z.read("Metadata/project_settings.config").decode())
         _i, _p, _w, boxes = on_plates(z, cfg, label)
@@ -890,15 +960,15 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
         run, scales = run_on(False)
         if run.returncode == VERSION_REFUSED and not newer:
             # The app opens it, with a note to update: in the GUI that's a notice, not a refusal.
-            warnings.append(f"{slicer.name}'s command line won't take the file's version ({file_stamp}) without "
-                            f"--allow-newer-file (sliced with it)")
+            result.version = (f"{slicer.name}'s command line won't take the file's version ({file_stamp}) without "
+                              f"--allow-newer-file (sliced with it)")
             newer = True
             run, scales = run_on(False)
         if run.returncode in CRASHES:
             # Bambu Studio 2.8.2 sometimes aborts after slicing, in GCodeProcessor's
             # time estimates (macOS: "stack buffer overflow"; 2 in 6 runs of one H2D
             # file). A crash gets one more try; one that repeats is a failure.
-            warnings.append(f"{slicer.name} crashed (exit {run.returncode}) and was run again")
+            result.retried = run.returncode
             run, scales = run_on(False)
         log = (run.stdout + run.stderr).splitlines()
         if run.returncode in CONFLICT_EXITS or (run.returncode != 0 and
@@ -909,34 +979,33 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
             run, scales = run_on(True)
             log = (run.stdout + run.stderr).splitlines()
             if run.returncode == 0:
-                warnings.append(f"at full size {slicer.name}'s prime tower collides with the model: move the tower "
-                                "or scale it down in the slicer (sliced at " + ", ".join(
-                                    f"{v * 100:g}%" for v in scales.values()) + " with the tower beside it)")
+                result.warnings.append(f"at full size {slicer.name}'s prime tower collides with the model: move the "
+                                       "tower or scale it down in the slicer (sliced at " + ", ".join(
+                                           f"{v * 100:g}%" for v in scales.values()) + " with the tower beside it)")
         elif run.returncode in UNPRINTABLE_EXITS and not scales:
             # At full size its brim, skirt or tower runs off the bed: the downloader's to
             # fix, like a model bigger than the bed -- so slice it smaller, as they would.
             run, scales = run_on(True)
             log = (run.stdout + run.stderr).splitlines()
             if run.returncode == 0:
-                warnings.append(f"at full size {slicer.name}'s brim, skirt or prime tower runs past the bed's "
-                                "printable area: scale it down or narrow the brim in the slicer (sliced at "
-                                + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
-        if scales:
-            info.append("sliced    : a copy with " + ", ".join(f"plate {n} at {v * 100:g}%" for n, v in scales.items())
-                        + ", as a downloader would scale it")
+                result.warnings.append(f"at full size {slicer.name}'s brim, skirt or prime tower runs past the bed's "
+                                       "printable area: scale it down or narrow the brim in the slicer (sliced at "
+                                       + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
+        result.exit, result.scales = run.returncode, scales
         if run.returncode != 0:
+            result.refused = dict(OUT_OF_RANGE.findall("\n".join(log)))
             tail = [ln for ln in log if "shader" not in ln and "gl_FragColor" not in ln and "ERROR: 0:" not in ln][-6:]
             # Bambu Studio says why in result.json and nothing on the console.
-            result = Path(tmp) / "result.json"
-            if result.exists():
+            reason_file = Path(tmp) / "result.json"
+            if reason_file.exists():
                 try:
-                    reason = json.loads(result.read_text(encoding="utf-8")).get("error_string")
+                    reason = json.loads(reason_file.read_text(encoding="utf-8")).get("error_string")
                 except ValueError:
                     reason = None
                 if reason and reason != "Success.":
                     tail.append(reason)
-            problems.append(f"{slicer.name} didn't slice it (exit {run.returncode}): " + " | ".join(tail))
-            return info, problems, warnings
+            result.tail = tail
+            return result
         for box in boxes:
             if box is None:
                 continue
@@ -944,22 +1013,16 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
             gcode = Path(tmp) / f"plate_{n}.gcode"
             name = f"plate {n}" if len(boxes) > 1 else "plate"
             if not gcode.exists() or gcode.stat().st_size == 0:
-                problems.append(f"{name}: {slicer.name} wrote no G-code")
+                result.problems.append(f"{name}: {slicer.name} wrote no G-code")
                 continue
             facts = gcode_facts(gcode)
-            info.append(f"sliced    : {name} {gcode.stat().st_size / 1e6:.0f} MB G-code"
-                        + (f", {facts['time']}" if facts["time"] else "")
-                        + (f", {facts['grams']:.0f} g" if facts["grams"] is not None else "")
-                        + f", tool changes {dict(sorted(facts['tools'].items()))}"
-                        + (f", prime tower {facts['tower'][0]:.0f}..{facts['tower'][2]:.0f} x "
-                           f"{facts['tower'][1]:.0f}..{facts['tower'][3]:.0f}" if facts["tower"] else "")
-                        + (f" ({facts['tower_share']:.0%} of the filament)" if facts["tower_share"] else ""))
+            result.plates.append((name, gcode.stat().st_size / 1e6, facts))
             if facts["manual"]:
-                problems.append(f"{name}: the G-code stops for a person ({dict(facts['manual'])}) -- "
-                                f"not a print-and-go multicolor file")
+                result.problems.append(f"{name}: the G-code stops for a person ({dict(facts['manual'])}) -- "
+                                       f"not a print-and-go multicolor file")
             if k > 1 and len(facts["tools"]) < 2:
-                problems.append(f"{name}: {k} filaments but the G-code changes tool {dict(facts['tools'])} -- "
-                                f"the colors won't print")
+                result.problems.append(f"{name}: {k} filaments but the G-code changes tool {dict(facts['tools'])} -- "
+                                       f"the colors won't print")
             if facts["tower"]:
                 tw = facts["tower"]
                 s = scales.get(n, 1.0)
@@ -974,12 +1037,11 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> tuple[list[s
                            f"({foot[0]:.0f}..{foot[2]:.0f} x {foot[1]:.0f}..{foot[3]:.0f})")
                     # A model bigger than the bed has no room kept for the tower: whoever scales it
                     # moves the tower too. A warning there, a failure anywhere else.
-                    (warnings if n in scales else problems).append(msg + (" -- move the tower after scaling"
-                                                                          if n in scales else ""))
+                    (result.warnings if n in scales else result.problems).append(
+                        msg + (" -- move the tower after scaling" if n in scales else ""))
         errors = [ln for ln in log if "[error]" in ln and "shader" not in ln and "Voronoi" not in ln
                   and "exclude triangles" not in ln]
         if errors:
-            warnings.append(f"{slicer.name} logged {len(errors)} error line(s) but sliced; first: {errors[0][-160:]}")
-    return info, problems, warnings
-
-
+            result.warnings.append(f"{slicer.name} logged {len(errors)} error line(s) but sliced; first: "
+                                   f"{errors[0][-160:]}")
+    return result
