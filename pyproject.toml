@@ -28,7 +28,7 @@ classifiers = [
 
 [project.optional-dependencies]
 mcp = []  # kept so `pip install slicerbridge[mcp]` still works
-dev = ["pytest>=8", "ruff==0.17.2"]  # exact: a new ruff changes what lint checks; Dependabot proposes bumps
+dev = ["pytest>=8", "ruff==0.17.3"]  # exact: a new ruff changes what lint checks; Dependabot proposes bumps
 
 [project.scripts]
 slicerbridge = "slicerbridge.cli:main"
