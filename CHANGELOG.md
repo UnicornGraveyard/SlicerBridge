@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- CI runs the prusa engine's write path and its checks for all four Prusa printers, with made-up profiles in
+  place of the ones PrusaSlicer builds (ADR-0001).
+
 ## 0.4.2 (2026-10-30)
 
 - The MCP server's read-only tools state all four behaviour hints (not destructive, idempotent, as well as
