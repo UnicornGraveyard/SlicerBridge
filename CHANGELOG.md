@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Each printer's label, colors, vendor, engine and slicer come from one record (`printers.PrinterInfo`), not
+  three tables that each listed every engine. Nothing a user sees changes (ADR-0001).
 - CI runs the prusa engine's write path and its checks for all four Prusa printers, with made-up profiles in
   place of the ones PrusaSlicer builds (ADR-0001).
 - Each Prusa file records how it was made in its zip comment, after the `SlicerBridge` stamp: the source plate,
