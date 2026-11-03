@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Each printer's label, colors, vendor, engine and slicer come from one record (`printers.PrinterInfo`), not
+  three tables that each listed every engine. Nothing a user sees changes (ADR-0001).
+
 ## 0.4.2 (2026-10-30)
 
 - The MCP server's read-only tools state all four behaviour hints (not destructive, idempotent, as well as
