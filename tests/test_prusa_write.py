@@ -6,12 +6,14 @@ profiles here are made up: only the settings the engine reads, with each printer
 tool count. Without PrusaSlicer, checks 9 and 10 (PrusaSlicer loading and slicing the file) skip
 themselves, as they do on a machine without it.
 """
+import re
 import zipfile
 
 import pytest
 
 from builders import bambu_project
 from slicerbridge import output
+from slicerbridge.cli import main
 from slicerbridge.engines import prusa
 
 # key: (bed width, depth, height, wipe tower)
@@ -132,3 +134,105 @@ def test_a_file_that_doesnt_say_how_it_was_made_has_no_record(tmp_path, comment)
         z.writestr("3D/3dmodel.model", "")
         z.comment = comment
     assert prusa.read_record(f) is None
+
+
+# ---- re-checking a written file: verify (ADR-0001)
+
+def _rewrite(f, name=None, change=None, comment=None):
+    """Rewrite one entry of a written file (`change` maps its text to new text), or its zip comment."""
+    with zipfile.ZipFile(f) as z:
+        entries = [(i, z.read(i.filename)) for i in z.infolist()]
+        old_comment = z.comment
+    with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as z:
+        for i, data in entries:
+            z.writestr(i, change(data.decode()).encode() if i.filename == name else data)
+        z.comment = old_comment if comment is None else comment
+
+
+def _converted(project, tmp_path, key="xl", **kwargs):
+    assert prusa.convert(project, "Cube", [key], tmp_path / "out", **kwargs)[1] == 0
+    return prusa.printer_files(tmp_path / "out" / "Cube", "Cube", key)
+
+
+def _numbers(lines):
+    return sorted(int(line.split(".")[0]) for line in lines if line[:1].isdigit())
+
+
+def test_a_written_file_passes_its_checks_again(project, tmp_path, profiles):
+    for f in _converted(project, tmp_path):
+        info, problems, warnings = prusa.audit(f, project, "xl")
+        assert problems == []
+        assert _numbers(info) == [1, 2, 3, 4, 5, 6, 7, 8, 11]
+        assert warnings == ["PrusaSlicer isn't installed: it doesn't load the file (check 9)"]
+
+
+def test_without_the_source_the_file_alone_is_checked(project, tmp_path, profiles):
+    f = _converted(project, tmp_path)[0]
+    info, problems, _w = prusa.audit(f, None, "xl")
+    assert problems == [] and _numbers(info) == [1, 2, 3, 7, 8]  # no paint, colors, modifiers or size
+    assert "no --source" in info[0]
+
+
+def test_a_wrong_color_fails_against_the_source(project, tmp_path, profiles):
+    f = _converted(project, tmp_path)[0]
+    _rewrite(f, "Metadata/Slic3r_PE.config", lambda t: t.replace("#DE4343", "#000000"))
+    problems = prusa.audit(f, project, "xl")[1]
+    assert len(problems) == 1 and problems[0].startswith("7. config colors == mapped palette")
+    assert prusa.audit(f, None, "xl")[1] == []  # nothing to compare the colors with
+
+
+def test_a_model_moved_off_the_bed_fails_even_without_the_source(project, tmp_path, profiles):
+    f = _converted(project, tmp_path)[0]
+
+    def off_the_bed(xml):
+        return re.sub(r'(transform="(?:\S+ ){9})(\S+)', lambda m: f"{m.group(1)}{float(m.group(2)) + 1000:g}", xml)
+
+    _rewrite(f, "3D/3dmodel.model", off_the_bed)
+    assert [p.split(":")[0] for p in prusa.audit(f, None, "xl")[1]] == ["8. on the bed"]
+
+
+def test_a_file_without_a_record_is_checked_with_the_usual_mapping_and_says_so(project, tmp_path, profiles):
+    f = _converted(project, tmp_path)[0]
+    _rewrite(f, comment=b"SlicerBridge")  # as 0.4.2 and earlier wrote it
+    _info, problems, warnings = prusa.audit(f, project, "xl")
+    assert problems == []
+    assert any("doesn't record its slot-to-tool mapping" in w and "[1,3,5] -> [1,2,3]" in w for w in warnings)
+
+
+def test_an_old_file_of_a_model_bigger_than_the_bed_isnt_failed_without_the_source(tmp_path, profiles):
+    src = bambu_project(tmp_path / "big.3mf", plates=1, size=300.0)  # bigger than the MMU3's bed
+    assert prusa.convert(src, "Big", ["mmu3"], tmp_path / "out") == (1, 0)
+    f = tmp_path / "out" / "Big" / "Big - Prusa MMU3.3mf"
+    assert prusa.audit(f, None, "mmu3")[1] == []  # its record says it's bigger than the bed: a warning
+    _rewrite(f, comment=b"SlicerBridge")
+    _info, problems, warnings = prusa.audit(f, None, "mmu3")
+    assert problems == [] and any(w.startswith("8. on the bed") and "--source" in w for w in warnings)
+    assert prusa.audit(f, src, "mmu3")[1] == []  # with the source, it's known
+
+
+def test_a_file_converted_with_a_map_is_checked_with_that_map(project, tmp_path, profiles):
+    custom = {1: 3, 3: 1, 5: 2}
+    f = _converted(project, tmp_path, explicit=custom)[0]
+    assert prusa.audit(f, project, "xl")[1] == []  # the record says which map
+    _rewrite(f, comment=b"SlicerBridge")
+    assert prusa.audit(f, project, "xl")[1]  # without it, the usual mapping is wrong for this file
+    assert prusa.audit(f, project, "xl", explicit=custom)[1] == []  # verify --map puts it right
+
+
+def test_the_wrong_source_is_named_as_such(project, tmp_path, profiles):
+    f = _converted(project, tmp_path)[1]  # plate 2
+    one = bambu_project(tmp_path / "one.3mf", plates=1)
+    problems = prusa.audit(f, one, "xl")[1]
+    assert problems and "the source has no plate 2" in problems[0]
+
+
+def test_verify_re_checks_prusa_files_from_the_command_line(project, tmp_path, profiles, capsys):
+    folder = _converted(project, tmp_path)[0].parent
+    assert main(["verify", str(folder), "--source", str(project)]) == 0
+    assert main(["verify", str(folder)]) == 0
+    assert "2/2 passed" in capsys.readouterr().out
+    _rewrite(prusa.printer_files(folder, "Cube", "xl")[0], "Metadata/Slic3r_PE.config",
+             lambda t: t.replace("#DE4343", "#000000"))
+    assert main(["verify", str(folder), "--source", str(project)]) == 1
+    printed = capsys.readouterr().out
+    assert "1/2 passed" in printed and "convert again to re-check" not in printed

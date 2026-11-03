@@ -24,6 +24,7 @@ and load-checks every output.
 """
 from __future__ import annotations
 
+import functools
 import gc
 import json
 import math
@@ -763,9 +764,12 @@ def read_3mf_config(text: str) -> tuple[dict, int, int]:
     return values, read, key_lines
 
 
-def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer,
+def verify(out: Path, src: Optional[Source], plate: Optional[Plate], mapping: dict, printer: Printer,
            prof: Profile, ps: Optional[str], slice_it: bool = False,
            placement: Optional[Placement] = None) -> list:
+    """The checks on a written file. Without the source and its plate (verify with no --source), the
+    ones that compare the file with them are left out: the object extruders (3), paint (4, 5),
+    modifiers (6), the colors (7, 9) and the size (11)."""
     checks = []
     tools = printer.tools
 
@@ -853,48 +857,52 @@ def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer
     states = sorted(s for s in hist_out if s)
     vol_ext = sorted({int(md["extruder"]) for vs in vols.values() for _, _, md in vs if md.get("extruder")})
     out_obj = [obj_ext.get(o["id"]) for o in objects]
-    want_obj = []
-    for oid in plate.objects:
-        so = src.project.settings_objects.get(oid)
-        if so and so.extruder:
-            e = so.extruder
-            want_obj.append(str(mapping.get(int(e), int(e))) if e.isdigit() else e)
-        else:
-            want_obj.append(None)
+    want_obj = None
+    if plate is not None:
+        want_obj = []
+        for oid in plate.objects:
+            so = src.project.settings_objects.get(oid)
+            if so and so.extruder:
+                e = so.extruder
+                want_obj.append(str(mapping.get(int(e), int(e))) if e.isdigit() else e)
+            else:
+                want_obj.append(None)
     tops = max([0, *states, *vol_ext, *[int(e) for e in out_obj if e]])
-    checks.append(Check("3", f"tools <= {tools}", tops <= tools and out_obj == want_obj and not paint_err,
+    checks.append(Check("3", f"tools <= {tools}",
+                        tops <= tools and (want_obj is None or out_obj == want_obj) and not paint_err,
                         f"paint states {states}, volume extruders {vol_ext}, object extruders "
-                        f"{out_obj} (want {want_obj}){paint_err}"))
+                        f"{out_obj}" + (f" (want {want_obj})" if want_obj is not None else "") + paint_err))
 
-    # 4. painted triangles in == out
-    checks.append(Check("4", "painted faces in == out", painted == plate.painted and triangles == plate.triangles,
-                        f"painted {plate.painted:,} -> {painted:,}, faces {plate.triangles:,} -> {triangles:,}",
-                        painted))
+    if plate is not None:
+        # 4. painted triangles in == out
+        checks.append(Check("4", "painted faces in == out", painted == plate.painted and triangles == plate.triangles,
+                            f"painted {plate.painted:,} -> {painted:,}, faces {plate.triangles:,} -> {triangles:,}",
+                            painted))
 
-    # 5. per-slot leaf histogram survives the mapping
-    try:
-        want = remap_histogram(histogram(plate.codes), mapping)
-    except ValueError as e:
-        want, paint_err = Counter(), paint_err + f"  UNREADABLE SOURCE PAINT: {e}"
-    diff = {s: (want.get(s, 0), hist_out.get(s, 0)) for s in set(want) | set(hist_out)
-            if want.get(s, 0) != hist_out.get(s, 0)}
-    shown = ", ".join(f"T{s}:{hist_out[s]:,}" for s in sorted(hist_out))
-    checks.append(Check("5", "paint leaves per tool in == out", not diff and not paint_err,
-                        f"{shown}" + (f"  MISMATCH {diff}" if diff else "") + paint_err))
+        # 5. per-slot leaf histogram survives the mapping
+        try:
+            want = remap_histogram(histogram(plate.codes), mapping)
+        except ValueError as e:
+            want, paint_err = Counter(), paint_err + f"  UNREADABLE SOURCE PAINT: {e}"
+        diff = {s: (want.get(s, 0), hist_out.get(s, 0)) for s in set(want) | set(hist_out)
+                if want.get(s, 0) != hist_out.get(s, 0)}
+        shown = ", ".join(f"T{s}:{hist_out[s]:,}" for s in sorted(hist_out))
+        checks.append(Check("5", "paint leaves per tool in == out", not diff and not paint_err,
+                            f"{shown}" + (f"  MISMATCH {diff}" if diff else "") + paint_err))
 
-    # 6. modifiers / negative parts / support volumes
-    got = Counter(md.get("volume_type", "ModelPart") for vs in vols.values() for _, _, md in vs)
-    special = Counter({k: v for k, v in got.items() if k != "ModelPart"})
-    checks.append(Check("6", "modifier/negative parts match", special == plate.special,
-                        f"source {dict(plate.special) or 'none'}, output {dict(special) or 'none'}, "
-                        f"parts {got.get('ModelPart', 0)}"))
+        # 6. modifiers / negative parts / support volumes
+        got = Counter(md.get("volume_type", "ModelPart") for vs in vols.values() for _, _, md in vs)
+        special = Counter({k: v for k, v in got.items() if k != "ModelPart"})
+        checks.append(Check("6", "modifier/negative parts match", special == plate.special,
+                            f"source {dict(plate.special) or 'none'}, output {dict(special) or 'none'}, "
+                            f"parts {got.get('ModelPart', 0)}"))
 
     # 7. colors in the embedded config, read the way PrusaSlicer reads it
     values, read, key_lines = read_3mf_config(cfg_text)
     fc = values.get("filament_colour", "").split(";")
     ec = values.get("extruder_colour", "").split(";")
     wrong = []
-    for old, tool in sorted(mapping.items()):
+    for old, tool in sorted(mapping.items()) if src is not None else ():
         want_c = src.palette[old - 1]
         f_c = fc[tool - 1].upper() if tool <= len(fc) else None
         e_c = ec[tool - 1].upper() if tool <= len(ec) else None
@@ -903,8 +911,9 @@ def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer
     nt = len(values.get("nozzle_diameter", "").split(",")) if values.get("nozzle_diameter") else 0
     ok7 = (bool(cfg_text) and read == key_lines and not wrong and nt == tools
            and values.get("printer_settings_id") == printer.preset)
-    pal = " ".join(f"T{t}={src.palette[o - 1]}" for o, t in sorted(mapping.items(), key=lambda x: x[1]))
-    checks.append(Check("7", "config colors == mapped palette", ok7,
+    pal = (" ".join(f"T{t}={src.palette[o - 1]}" for o, t in sorted(mapping.items(), key=lambda x: x[1]))
+           if src is not None else "colors not compared (no source)")
+    checks.append(Check("7", "config colors == mapped palette" if src is not None else "config readable", ok7,
                         f"{pal}; {read}/{key_lines} config lines readable, {nt} tools, "
                         f"{values.get('printer_settings_id')}" + (f"  WRONG {wrong}" if wrong else "")))
 
@@ -933,23 +942,26 @@ def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer
              f" on {bx1 - bx0:g} x {by1 - by0:g} x {bh:g}")
     if placement is not None and not placement.fits:
         # Known to be bigger than the bed: placed centered at full size, and that's fine.
-        pct = math.floor(placement.max_scale * 1000) / 10
+        fit = (f"fits at {math.floor(placement.max_scale * 1000) / 10:g}% or less, " if placement.max_scale < 1
+               else "")
         checks.append(Check("8", "on the bed", lo[2] >= -0.05,
                             f"bigger than the bed, centered at full size ({where}) -- "
-                            f"fits at {pct:g}% or less, scale it in PrusaSlicer before printing", warn=True))
+                            f"{fit}scale it in PrusaSlicer before printing", warn=True))
     else:  # it fits, so ending up off the bed would be a placement bug
         checks.append(Check("8", "on the bed", on_bed, where))
 
     # 11. the model is the size it was designed: printed parts' dimensions in == out
     # (width and depth swap places if it was turned 90 degrees to fit)
-    got = tuple(hi[k] - lo[k] for k in range(3))
-    want = tuple(plate.size)
-    if placement is not None and placement.rotated:
-        want = (want[1], want[0], want[2])
-    same = all(abs(g - w) <= 0.01 for g, w in zip(got, want))
-    size_check = Check("11", "size unchanged", same,
-                       f"{got[0]:.2f} x {got[1]:.2f} x {got[2]:.2f} mm, source {want[0]:.2f} x {want[1]:.2f} x {want[2]:.2f}"
-                       + (" (turned 90)" if placement is not None and placement.rotated else ""))
+    size_check = None
+    if plate is not None:
+        got = tuple(hi[k] - lo[k] for k in range(3))
+        want = tuple(plate.size)
+        if placement is not None and placement.rotated:
+            want = (want[1], want[0], want[2])
+        same = all(abs(g - w) <= 0.01 for g, w in zip(got, want))
+        size_check = Check("11", "size unchanged", same,
+                           f"{got[0]:.2f} x {got[1]:.2f} x {got[2]:.2f} mm, source {want[0]:.2f} x {want[1]:.2f} x "
+                           f"{want[2]:.2f}" + (" (turned 90)" if placement is not None and placement.rotated else ""))
 
     # 9. PrusaSlicer itself opens it and reads the same config
     if ps:
@@ -964,11 +976,12 @@ def verify(out: Path, src: Source, plate: Plate, mapping: dict, printer: Printer
                                 "not sliced: bigger than the bed", warn=True))
         else:
             checks.append(slice_check(out, ps))
-    checks.append(size_check)
+    if size_check is not None:
+        checks.append(size_check)
     return checks
 
 
-def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: Source, tools: int) -> Check:
+def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: Optional[Source], tools: int) -> Check:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         saved = Path(tmp) / "loaded.ini"
         try:
@@ -984,14 +997,14 @@ def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: S
                 if sep:
                     loaded[k] = v
     fc = loaded.get("filament_colour", "").split(";")
-    colors_ok = bool(loaded) and all(
-        tool <= len(fc) and fc[tool - 1].upper() == src.palette[old - 1] for old, tool in mapping.items())
+    colors_ok = bool(loaded) and (src is None or all(  # without the source, there's no palette to compare
+        tool <= len(fc) and fc[tool - 1].upper() == src.palette[old - 1] for old, tool in mapping.items()))
     nt = len(loaded.get("nozzle_diameter", "").split(",")) if loaded.get("nozzle_diameter") else 0
     ok = r.returncode == 0 and facets == model_tris and colors_ok and nt == tools
     err = (r.stderr.strip().splitlines() or [""])[-1][:120]
     return Check("9", "PrusaSlicer --info loads it", ok,
                  f"exit {r.returncode}, facets {facets:,} (want {model_tris:,}), manifold {','.join(manifold)}, "
-                 f"reloaded {nt} tools, colors {'ok' if colors_ok else 'WRONG'}" + (f"  {err}" if r.returncode else ""),
+                 f"reloaded {nt} tools, colors {('ok' if colors_ok else 'WRONG') if src is not None else 'not compared'}" + (f"  {err}" if r.returncode else ""),
                  r.stderr)  # all of it: refused_key looks for the setting PrusaSlicer names
 
 
@@ -1159,6 +1172,74 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
             ok,
         ))
     return rows
+
+
+PLATE_IN_NAME = re.compile(r" - Plate (\d+)(?: - |\.3mf$)")
+
+
+@functools.lru_cache(maxsize=2)
+def _audit_source(path: Path, _stamp: tuple) -> Source:
+    """A source read once for every file verify re-checks (re-checking never moves its plates)."""
+    return load_source(path.stem, path.stem, path)
+
+
+def audit(f: Path, src_path: Optional[Path], key: str, slice_it: bool = False,
+          explicit: Optional[dict] = None) -> tuple[list[str], list[str], list[str]]:
+    """(info, problems, warnings) of re-checking a written Prusa file, for `slicerbridge verify`.
+
+    The checks are verify()'s, run as the conversion ran them: the plate, the slot-to-tool mapping
+    and the placement come from the file's record (read_record()), and the comparisons need
+    `src_path`. A file that predates the record uses `explicit` (verify --map), or else the mapping
+    a conversion without --map would have used, and says so.
+    """
+    printer = PRINTERS[key]
+    prof = load_profile(key)
+    ps = find_prusaslicer()
+    made = read_record(f)
+    info, problems, warnings = [], [], []
+    src = plate = placement = None
+    mapping: dict = {}
+    if made is not None:
+        mapping = made["map"]
+        placement = Placement(made["turned"], (0.0, 0.0), (0.0, 0.0, 0.0), made["fits"])
+    elif explicit is not None:
+        mapping = dict(explicit)
+    if src_path is not None:
+        st = src_path.stat()
+        src = _audit_source(src_path, (st.st_mtime_ns, st.st_size))
+        if made is None and explicit is None:
+            mapping = decide_mapping(src, printer, None)
+            warnings.append(f"this file doesn't record its slot-to-tool mapping (written before SlicerBridge "
+                            f"0.4.3): checked with {mapping_text(mapping)}; if it was converted with --map, "
+                            f"verify it with the same --map")
+        number = made["plate"] if made is not None else None
+        if number is None:
+            found = PLATE_IN_NAME.search(f.name)
+            number = int(found.group(1)) if found else None
+        plates = {p.number: p for p in src.plates}
+        if number is None and len(src.plates) == 1:
+            plate = src.plates[0]
+        else:
+            plate = plates.get(number)
+        if plate is None:
+            return info, [f"the source has no plate {number} (plates {sorted(plates)}): is it the project this "
+                          f"file was made from?"], warnings
+        placement = plan_placement(src, plate, prof.bed)
+    else:
+        info.append("no --source: the paint, colors, modifiers and size aren't compared")
+    if ps is None:
+        warnings.append("PrusaSlicer isn't installed: it doesn't load the file (check 9)"
+                        + (" or slice it (10)" if slice_it else ""))
+    for c in verify(f, src, plate, mapping, printer, prof, ps, slice_it, placement):
+        line = f"{c.n}. {c.name}: {c.detail}"
+        if c.n == "8" and not c.ok and placement is None:
+            # Off the bed, and nothing says whether it was known to be bigger than the bed: a model
+            # that is, is written at full size, and the conversion's own check 8 passed it with a warning.
+            warnings.append(line + " -- the file doesn't say whether the model is bigger than the bed: "
+                                   "verify with --source to know")
+            continue
+        (problems if not c.ok else warnings if c.warn else info).append(line)
+    return info, problems, warnings
 
 
 def print_table(rows: list, refused: list) -> None:
