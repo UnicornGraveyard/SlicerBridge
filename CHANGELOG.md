@@ -4,6 +4,9 @@
 
 - CI runs the prusa engine's write path and its checks for all four Prusa printers, with made-up profiles in
   place of the ones PrusaSlicer builds (ADR-0001).
+- Each Prusa file records how it was made in its zip comment, after the `SlicerBridge` stamp: the source plate,
+  the slot-to-tool mapping (`--map` can change it), and whether the model fit the bed and was turned.
+  PrusaSlicer never reads a zip comment; it's for `verify` to re-check the file.
 
 ## 0.4.2 (2026-10-30)
 

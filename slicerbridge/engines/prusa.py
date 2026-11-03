@@ -25,6 +25,7 @@ and load-checks every output.
 from __future__ import annotations
 
 import gc
+import json
 import math
 import os
 import posixpath
@@ -558,6 +559,33 @@ class Placement:
     max_scale: float = 1.0  # largest scale that would fit, when it doesn't -- for the warning only
 
 
+RECORD_VERSION = 1
+
+
+def record(plate: Plate, mapping: dict, placement: Placement) -> bytes:
+    """The zip comment of a Prusa file: the SlicerBridge stamp, then how the file was made, so verify can
+    re-check it: the source plate, the slot-to-tool mapping (--map can change it) and the placement.
+    PrusaSlicer never reads a zip comment; output.ours() checks only how it starts."""
+    made = {"v": RECORD_VERSION, "plate": plate.number, "map": {str(k): v for k, v in sorted(mapping.items())},
+            "fits": placement.fits, "turned": placement.rotated}
+    return STAMP + b" " + json.dumps(made, separators=(",", ":")).encode()
+
+
+def read_record(path: Path) -> Optional[dict]:
+    """How a Prusa file was made, from its zip comment ({"plate", "map", "fits", "turned"}), or None for
+    a file that doesn't say: one written before files recorded it, or not by SlicerBridge."""
+    with zipfile.ZipFile(path) as z:
+        comment = z.comment
+    if not comment.startswith(STAMP + b" {"):
+        return None
+    try:
+        made = json.loads(comment[len(STAMP) + 1:])
+        return {"plate": made["plate"], "map": {int(k): int(v) for k, v in made["map"].items()},
+                "fits": bool(made["fits"]), "turned": bool(made["turned"])}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def fit_scale(size: tuple, bed: tuple) -> tuple[float, bool]:
     """Largest uniform scale that fits, and whether it needs the 90 degree turn."""
     bw, bd, bh = bed[2] - bed[0], bed[3] - bed[1], bed[4]
@@ -1077,7 +1105,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
                 tmp.unlink(missing_ok=True)
                 raise Refusal(f"{src.slug}: Panda2Prusa wrote no objects for plate {plate.number}")
             with zipfile.ZipFile(tmp, "a", compression=zipfile.ZIP_DEFLATED) as z:
-                z.comment = STAMP
+                z.comment = record(plate, mapping, pl)
                 z.writestr("Metadata/Slic3r_PE.config", config)
                 if tower:
                     z.writestr("Metadata/Prusa_Slicer_wipe_tower_information.xml",

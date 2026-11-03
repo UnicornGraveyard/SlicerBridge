@@ -11,6 +11,7 @@ import zipfile
 import pytest
 
 from builders import bambu_project
+from slicerbridge import output
 from slicerbridge.engines import prusa
 
 # key: (bed width, depth, height, wipe tower)
@@ -106,3 +107,28 @@ def test_a_tall_print_gets_the_heavier_wipe_tower(tmp_path, profiles, capsys):
         values, _read, _lines = prusa.read_3mf_config(z.read("Metadata/Slic3r_PE.config").decode())
     assert values["wipe_tower_brim_width"] == "10" and values["wipe_tower_extra_spacing"] == "150%"
     assert "heavier wipe tower" in capsys.readouterr().out
+
+
+def test_each_file_records_its_plate_mapping_and_placement(project, tmp_path, profiles):
+    """What verify needs to re-check a file, and only the conversion knew."""
+    out = tmp_path / "out"
+    assert prusa.convert(project, "Cube", ["mmu3"], out) == (2, 0)
+    for n, f in enumerate(prusa.printer_files(out / "Cube", "Cube", "mmu3"), start=1):
+        assert prusa.read_record(f) == {"plate": n, "map": {1: 1, 3: 2, 5: 3}, "fits": True, "turned": False}
+        assert output.ours(f)  # still SlicerBridge's: the record follows the stamp
+
+
+def test_an_explicit_map_and_a_model_bigger_than_the_bed_are_recorded(tmp_path, profiles):
+    src = bambu_project(tmp_path / "big.3mf", plates=1, size=300.0)  # bigger than the MMU3's 250 x 220 bed
+    assert prusa.convert(src, "Big", ["mmu3"], tmp_path / "out", explicit={1: 2, 3: 1, 5: 3}) == (1, 0)
+    made = prusa.read_record(tmp_path / "out" / "Big" / "Big - Prusa MMU3.3mf")
+    assert made == {"plate": 1, "map": {1: 2, 3: 1, 5: 3}, "fits": False, "turned": False}
+
+
+@pytest.mark.parametrize("comment", [b"SlicerBridge", b"convert-prusa.py", b"SlicerBridge {not json", b""])
+def test_a_file_that_doesnt_say_how_it_was_made_has_no_record(tmp_path, comment):
+    f = tmp_path / "old.3mf"
+    with zipfile.ZipFile(f, "w") as z:
+        z.writestr("3D/3dmodel.model", "")
+        z.comment = comment
+    assert prusa.read_record(f) is None
