@@ -1,6 +1,6 @@
 # ADR-0001: No common engine interface yet; close the Prusa verify gap now
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-03: action items 1–4 merged as #26–#29)
 **Date:** 2026-11-02
 **Deciders:** Unicorn Graveyard (maintainer)
 
@@ -149,16 +149,16 @@ So A takes B's two concrete benefits for a third of the cost, and leaves a clear
 
 One PR each, in this order:
 
-1. [ ] **One record per printer.** `printers.py`: a `PrinterInfo(key, label, tools, vendor, engine, slicer)`
+1. [x] **One record per printer.** `printers.py`: a `PrinterInfo(key, label, tools, vendor, engine, slicer)`
    for every key; `label_of`, `tools_of`, `vendor_of` and `engine_of` read it, and `cli printers` takes the
    slicer from it. A test pins every key's answers to what they were before.
-2. [ ] **The Prusa write path in CI.** A test fixture writes a minimal made-up Prusa profile per printer (the
+2. [x] **The Prusa write path in CI.** A test fixture writes a minimal made-up Prusa profile per printer (the
    settings the engine reads, none of Prusa's own), so `convert_one` runs without PrusaSlicer, as #17 did
    for the orca engine. Checks 9 and 10 skip themselves without PrusaSlicer, as they do today.
-3. [ ] **Prusa files record how they were made.** The zip comment becomes the stamp plus a small JSON record:
+3. [x] **Prusa files record how they were made.** The zip comment becomes the stamp plus a small JSON record:
    plate number, mapping, whether the model fit the bed, whether it was turned. Prusa files then differ
    from today's by that comment alone.
-4. [ ] **`verify` re-checks Prusa files.** The engine's `verify()` takes an optional expectation (source,
+4. [x] **`verify` re-checks Prusa files.** The engine's `verify()` takes an optional expectation (source,
    plate, mapping, placement); `audit(f, src)` builds it from the file's record and the source; `cli verify`
    calls it instead of the "convert again to re-check" warning, and takes `--map` for files written before
    (3). It runs check 9 (PrusaSlicer `--info`) whenever PrusaSlicer is installed, as converting does.
@@ -168,4 +168,4 @@ One PR each, in this order:
    Gatefang for all 34 printers, the same as `main`'s apart from the Prusa files' zip comment (compare the
    files' contents, not their bytes); `verify out/GateFang --source …` passes 34/34 with the Prusa files
    checked. Then release.
-6. [ ] Set this ADR's status to Accepted once 1–4 are merged.
+6. [x] Set this ADR's status to Accepted once 1–4 are merged.
