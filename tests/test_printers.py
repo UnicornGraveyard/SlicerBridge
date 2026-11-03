@@ -89,3 +89,59 @@ def test_what_a_slicer_wont_load_is_read_in_each_slicers_words():
     check_9 = prusa.Check("9", "PrusaSlicer --info loads it", False, "exit 1", log)
     assert prusa.refused_key([check_9], {"brim_width", "wipe_tower_brim_width"}) == "wipe_tower_brim_width"
     assert prusa.refused_key([check_9], {"wall_loops"}) is None
+
+
+# Every printer's label, colors, vendor, engine and slicer, as they were before they moved into one
+# record (PrinterInfo): the record must answer exactly what the per-engine tables did.
+BEFORE = {
+    "a1mini": ('Bambu Lab A1 mini', 4, 'BBL', 'orca', 'Bambu Studio'),
+    "a1": ('Bambu Lab A1', 4, 'BBL', 'orca', 'Bambu Studio'),
+    "p1s": ('Bambu Lab P1S', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "p2s": ('Bambu Lab P2S', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "x1c": ('Bambu Lab X1 Carbon', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "h2s": ('Bambu Lab H2S', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "h2d": ('Bambu Lab H2D', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "h2dpro": ('Bambu Lab H2D Pro', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "h2c": ('Bambu Lab H2C', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "x2d": ('Bambu Lab X2D', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "k2plus": ('Creality K2 Plus', 4, 'Creality', 'orca', 'OrcaSlicer'),
+    "k2pro": ('Creality K2 Pro', 4, 'Creality', 'orca', 'OrcaSlicer'),
+    "k2se": ('Creality K2 SE', 4, 'Creality', 'orca', 'OrcaSlicer'),
+    "hi": ('Creality Hi', 4, 'Creality', 'orca', 'OrcaSlicer'),
+    "k1c": ('Creality K1C CFS', 4, 'Creality', 'orca', 'OrcaSlicer'),
+    "cc": ('Elegoo Centauri Carbon', 4, 'Elegoo', 'orca', 'OrcaSlicer'),
+    "kobras1": ('Anycubic Kobra S1', 4, 'Anycubic', 'orca', 'OrcaSlicer'),
+    "kobras1max": ('Anycubic Kobra S1 Max', 4, 'Anycubic', 'orca', 'OrcaSlicer'),
+    "kobra3": ('Anycubic Kobra 3', 4, 'Anycubic', 'orca', 'OrcaSlicer'),
+    "kobra3max": ('Anycubic Kobra 3 Max', 4, 'Anycubic', 'orca', 'OrcaSlicer'),
+    "kobrax": ('Anycubic Kobra X', 4, 'Anycubic', 'orca', 'OrcaSlicer'),
+    "ad5x": ('Flashforge AD5X', 4, 'Flashforge', 'orca', 'OrcaSlicer'),
+    "creator5": ('Flashforge Creator 5', 4, 'Flashforge', 'orca', 'OrcaSlicer'),
+    "creator5pro": ('Flashforge Creator 5 Pro', 4, 'Flashforge', 'orca', 'OrcaSlicer'),
+    "q2": ('QIDI Q2', 4, 'Qidi', 'orca', 'OrcaSlicer'),
+    "q2c": ('QIDI Q2C', 4, 'Qidi', 'orca', 'OrcaSlicer'),
+    "plus4": ('QIDI Plus4', 4, 'Qidi', 'orca', 'OrcaSlicer'),
+    "max4": ('QIDI Max4', 4, 'Qidi', 'orca', 'OrcaSlicer'),
+    "zrultras": ('WonderMaker ZR Ultra S', 4, 'WonderMaker', 'orca', 'OrcaSlicer'),
+    "mmu3": ('Prusa MMU3', 5, 'Prusa', 'prusa', 'PrusaSlicer'),
+    "xl": ('Prusa XL', 5, 'Prusa', 'prusa', 'PrusaSlicer'),
+    "indx4": ('Prusa Core One INDX 4T', 4, 'Prusa', 'prusa', 'PrusaSlicer'),
+    "indx8": ('Prusa Core One INDX 8T', 8, 'Prusa', 'prusa', 'PrusaSlicer'),
+    "u1": ('Snapmaker U1', 4, 'Snapmaker', 'u1', 'Snapmaker Orca'),
+}
+
+
+def test_each_printer_answers_as_it_did_before_one_record():
+    assert list(BEFORE) == P.ALL
+    for k, (label, tools, vendor, engine, slicer) in BEFORE.items():
+        assert (P.label_of(k), P.tools_of(k), P.vendor_of(k), P.engine_of(k)) == (label, tools, vendor, engine), k
+        info = P.info(k)
+        assert (info.key, info.label, info.tools, info.vendor, info.engine) == (k, label, tools, vendor, engine), k
+        assert P.SLICERS[info.slicer].name == slicer, k
+
+
+def test_an_unknown_printer_is_a_key_error():
+    with pytest.raises(KeyError):
+        P.engine_of("ender3")
+    with pytest.raises(KeyError):
+        P.info("ender3")
