@@ -27,7 +27,7 @@ from pathlib import Path
 
 from . import __version__
 from .errors import Refusal
-from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir, not_found, engine_of, file_safe, label_of,
+from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir, not_found, engine_of, file_safe, info, label_of,
                        name_suffix, printer_of, select, split_name, tools_of, vendor_of)
 
 def _engine(name: str):
@@ -155,9 +155,7 @@ def cmd_inspect(a: argparse.Namespace) -> int:
 def cmd_printers(a: argparse.Namespace) -> int:
     keys = select(a.printers, default="all")
     for k in keys:
-        engine = engine_of(k)
-        slicer = (SLICERS[PRINTERS[k].slicer].name if engine == "orca" else
-                  SLICERS["prusa"].name if engine == "prusa" else SLICERS["snapmaker"].name)
+        engine, slicer = engine_of(k), SLICERS[info(k).slicer].name
         brand = BRAND_SLICERS.get(vendor_of(k))
         sets = [n for n, members in SETS.items() if k in members]
         print(f"  {k:11} {label_of(k):26} {engine:6} {slicer:13} up to {tools_of(k):>2} colors"
@@ -171,6 +169,7 @@ def cmd_verify(a: argparse.Namespace) -> int:
     from .checks import orca as orca_check, u1 as u1_check
     files = _files(a.paths)
     src = _abs(a.source) if a.source else None
+    explicit = _parse_map(a.map)
     if not files:
         print("No .3mf files found.")
         return 0
@@ -195,7 +194,10 @@ def cmd_verify(a: argparse.Namespace) -> int:
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif engine == "prusa":
-            info, problems, warnings = [], [], ["Prusa files are checked while they're written: convert again to re-check"]
+            try:
+                info, problems, warnings = _engine("prusa").audit(f, src, key, a.slice, explicit)
+            except Exception as e:  # one file's failure doesn't stop the others being checked
+                info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         else:
             info, problems, warnings = [], ["not named for a printer SlicerBridge knows (see slicerbridge printers)"], []
         bad += not _report(f, info, problems, warnings)
@@ -336,6 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("paths", nargs="+", help=".3mf files or folders")
     v.add_argument("--source", help="the project they were made from (enables the color and size checks)")
     v.add_argument("--slice", action="store_true", help="also slice each file in its slicer")
+    v.add_argument("--map", help="Prusa files written before 0.4.3 only: the --map they were converted with")
     v.set_defaults(run=cmd_verify)
 
     b = sub.add_parser("brand-check", help="slice each file in its brand's own slicer")

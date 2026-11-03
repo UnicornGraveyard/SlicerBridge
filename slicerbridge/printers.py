@@ -401,32 +401,48 @@ U1_LABEL = "Snapmaker U1"
 U1_TOOLS = 4
 
 
+@dataclass(frozen=True)
+class PrinterInfo:
+    """What every printer has, whichever engine writes its files."""
+    key: str
+    label: str    # in the file name
+    tools: int    # colors it holds
+    vendor: str   # for --printers <vendor> and its brand slicer; the orca engine's is its profiles/ folder
+    engine: str   # orca, prusa or u1
+    slicer: str   # the SLICERS key of the slicer its file is built (or sliced) with
+
+
+# One record per printer, from each engine's own table, in --printers all order.
+INFO = {
+    **{k: PrinterInfo(k, p.label, p.tools, p.vendor, "orca", p.slicer) for k, p in PRINTERS.items()},
+    **{k: PrinterInfo(k, p.label, p.tools, "Prusa", "prusa", "prusa") for k, p in PRUSA_PRINTERS.items()},
+    "u1": PrinterInfo("u1", U1_LABEL, U1_TOOLS, "Snapmaker", "u1", "snapmaker"),
+}
+
+
+def info(key: str) -> PrinterInfo:
+    """The printer's record; a KeyError for a key SlicerBridge doesn't know."""
+    return INFO[key]
+
+
 def engine_of(key: str) -> str:
     """Which engine writes the file for this printer key: orca, prusa or u1."""
-    if key in PRINTERS:
-        return "orca"
-    if key in PRUSA_PRINTERS:
-        return "prusa"
-    if key == "u1":
-        return "u1"
-    raise KeyError(key)
+    return INFO[key].engine
 
 
 def label_of(key: str) -> str:
-    return {"orca": lambda: PRINTERS[key].label, "prusa": lambda: PRUSA_PRINTERS[key].label,
-            "u1": lambda: U1_LABEL}[engine_of(key)]()
+    return INFO[key].label
 
 
 def tools_of(key: str) -> int:
-    return {"orca": lambda: PRINTERS[key].tools, "prusa": lambda: PRUSA_PRINTERS[key].tools,
-            "u1": lambda: U1_TOOLS}[engine_of(key)]()
+    return INFO[key].tools
 
 
 def vendor_of(key: str) -> str:
-    return {"orca": lambda: PRINTERS[key].vendor, "prusa": lambda: "Prusa", "u1": lambda: "Snapmaker"}[engine_of(key)]()
+    return INFO[key].vendor
 
 
-ALL = [*PRINTERS, *PRUSA_PRINTERS, "u1"]
+ALL = list(INFO)
 
 # Named selections for --printers, beside "all" and any vendor (bambu, creality,
 # elegoo, anycubic, flashforge, qidi, wondermaker, prusa, snapmaker). "popular": the printers

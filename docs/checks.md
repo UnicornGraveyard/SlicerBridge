@@ -86,6 +86,14 @@ A plate taller than 100 mm on a printer with a wipe tower (the MMU3, the XL) get
 purge spacing where every plate's tower finds a spot for the wider brim, and a warning where it doesn't.
 PrusaSlicer's tower has no ribs or speed of its own.
 
+`slicerbridge verify` runs the same checks on a file that's already written. Each Prusa file records, in its zip
+comment after the `SlicerBridge` stamp, what only the conversion knew: the source plate, the slot-to-tool mapping
+(`--map` can change it), and whether the model fit the bed and was turned. PrusaSlicer never reads a zip comment.
+With `--source`, all of them run; without it, the ones that need only the file: 1, 2, 3 (the tool range), 7 (the
+config PrusaSlicer reads, its tool count and printer), 8, and 9 and 10 as above. A file written before 0.4.3
+doesn't record its mapping: it's checked with the mapping a conversion without `--map` would use, with a
+warning, or with `verify --map` for one converted with a map.
+
 ## What the checks share with the engines
 
 The paint, palette, extruder, version and size checks (1 to 8, 10 to 12) read the file with the checks' own decoder
@@ -105,4 +113,5 @@ It tests the printed tower against the model, not against the bed's edge.
 
 The u1 engine's checks size its tower with their own geometry, written apart from the engine's
 ([checks/u1.py](../slicerbridge/checks/u1.py)), and slice it with check 13 in Snapmaker Orca. The prusa engine's
-checks live in the engine itself; PrusaSlicer loading the file (9) and slicing it (10) are the independent ones.
+checks live in the engine itself, and `verify` runs them on a written file through the engine's `audit()`;
+PrusaSlicer loading the file (9) and slicing it (10) are the independent ones.
