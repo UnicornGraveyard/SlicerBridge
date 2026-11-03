@@ -4,6 +4,16 @@
 
 - Each printer's label, colors, vendor, engine and slicer come from one record (`printers.PrinterInfo`), not
   three tables that each listed every engine. Nothing a user sees changes (ADR-0001).
+- CI runs the prusa engine's write path and its checks for all four Prusa printers, with made-up profiles in
+  place of the ones PrusaSlicer builds (ADR-0001).
+- Each Prusa file records how it was made in its zip comment, after the `SlicerBridge` stamp: the source plate,
+  the slot-to-tool mapping (`--map` can change it), and whether the model fit the bed and was turned.
+  PrusaSlicer never reads a zip comment; it's for `verify` to re-check the file.
+- `slicerbridge verify` (and the MCP server's `verify_files`) re-checks Prusa files, as it does the others,
+  instead of saying to convert again. With `--source`, all of the prusa engine's checks run; without it, the ones
+  the file alone can answer. PrusaSlicer loads the file (check 9) whenever it's installed, as converting does. A
+  file written before 0.4.3 is checked with the usual mapping, with a warning, or with `verify --map`
+  (ADR-0001).
 
 ## 0.4.2 (2026-10-30)
 

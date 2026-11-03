@@ -169,6 +169,7 @@ def cmd_verify(a: argparse.Namespace) -> int:
     from .checks import orca as orca_check, u1 as u1_check
     files = _files(a.paths)
     src = _abs(a.source) if a.source else None
+    explicit = _parse_map(a.map)
     if not files:
         print("No .3mf files found.")
         return 0
@@ -193,7 +194,10 @@ def cmd_verify(a: argparse.Namespace) -> int:
             except Exception as e:  # one file's failure doesn't stop the others being checked
                 info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         elif engine == "prusa":
-            info, problems, warnings = [], [], ["Prusa files are checked while they're written: convert again to re-check"]
+            try:
+                info, problems, warnings = _engine("prusa").audit(f, src, key, a.slice, explicit)
+            except Exception as e:  # one file's failure doesn't stop the others being checked
+                info, problems, warnings = [], [f"the check itself failed: {type(e).__name__}: {e}"], []
         else:
             info, problems, warnings = [], ["not named for a printer SlicerBridge knows (see slicerbridge printers)"], []
         bad += not _report(f, info, problems, warnings)
@@ -334,6 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("paths", nargs="+", help=".3mf files or folders")
     v.add_argument("--source", help="the project they were made from (enables the color and size checks)")
     v.add_argument("--slice", action="store_true", help="also slice each file in its slicer")
+    v.add_argument("--map", help="Prusa files written before 0.4.3 only: the --map they were converted with")
     v.set_defaults(run=cmd_verify)
 
     b = sub.add_parser("brand-check", help="slice each file in its brand's own slicer")
