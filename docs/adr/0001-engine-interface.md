@@ -49,9 +49,15 @@ The forces at play:
 **Don't introduce a common engine interface now.** Keep explicit per-engine dispatch, and make two targeted
 changes:
 
-1. **Give the Prusa engine an `audit(f, src)` that `verify` calls**, like the other two engines: check 9 and
-   the file-structure checks, run on a written file. `verify --slice` slices it in PrusaSlicer as the engine
-   already does while writing.
+1. **Give the Prusa engine an `audit(f, src)` that `verify` calls**, like the other two engines. Its eleven
+   checks run on a written file: the ones that need only the file always (structure, tool range, the config
+   PrusaSlicer reads, on the bed, and PrusaSlicer loading it when installed), the rest with `--source`
+   (paint, colors, modifiers, size). `verify --slice` slices it in PrusaSlicer as the engine already does
+   while writing. Eight of the checks compare the file with what only the conversion knew (which plate it
+   is, the slot-to-tool mapping, whether it fit the bed), and `--map` can change the mapping, so **each Prusa
+   file records them** in its zip comment, after the `SlicerBridge` stamp: PrusaSlicer never reads the
+   comment, and SlicerBridge only checks how it starts. A file written before that falls back to the
+   default mapping, with a warning, and `verify --map` for one converted with a map.
 2. **Replace `printers.py`'s three dicts of lambdas with one lookup**: a small `PrinterInfo(label, tools,
    vendor, engine, slicer)` for every key, built once from the three tables, so `label_of`, `tools_of`,
    `vendor_of` and `engine_of` read one record instead of switching on the engine.
@@ -67,11 +73,11 @@ mirrored by hand in `cli.py` again.
 | Dimension | Assessment |
 |-----------|------------|
 | Complexity | Low: two local changes, no new abstraction |
-| Cost | About a day, including the Gatefang 34-printer comparison |
+| Cost | About a day for the four PRs, plus an hour or two on a Mac for the Gatefang 34-printer comparison |
 | Scalability | Fine for three engines; adding a fourth means editing five `cli.py` branches |
 | Team familiarity | High: the code stays as it reads today |
 
-**Pros:** Closes the one user-facing gap (Prusa verify). Removes the most error-prone duplication (three
+**Pros:** Closes the one user-facing gap (Prusa verify), and puts the Prusa engine's write path in CI. Removes the most error-prone duplication (three
 parallel lambda tables that must list the same engines). Leaves code that just went through a refactor alone
 while it settles. Every engine keeps the arguments it actually needs (`explicit` for Prusa).
 
@@ -141,14 +147,25 @@ So A takes B's two concrete benefits for a third of the cost, and leaves a clear
 
 ## Action Items
 
-1. [ ] `engines/prusa.py`: factor the checks run on a written file into `audit(f, src)` (check 9 and the
-   file-structure checks), used by the engine while writing and by `verify`.
-2. [ ] `cli.py` `verify`: call the Prusa `audit` (and, with `--slice`, its `slice_check`) instead of the
-   "convert again to re-check" warning. Add a test that `verify` passes a written Prusa file and fails a
-   corrupted one.
-3. [ ] `printers.py`: one `PrinterInfo` record per key; `label_of`, `tools_of`, `vendor_of` and `engine_of` read
-   it. Add a test that every key in `ALL` has a record and every record's engine module imports.
-4. [ ] Prove it: `pytest`, the slicer tests (`SLICERBRIDGE_SLICER_TESTS=1 pytest -m slicer`), and Gatefang for
-   all 34 printers, with files identical to `main`'s.
-5. [ ] Update `docs/checks.md` (Prusa files can be re-checked) and the CHANGELOG.
+One PR each, in this order:
+
+1. [ ] **One record per printer.** `printers.py`: a `PrinterInfo(key, label, tools, vendor, engine, slicer)`
+   for every key; `label_of`, `tools_of`, `vendor_of` and `engine_of` read it, and `cli printers` takes the
+   slicer from it. A test pins every key's answers to what they were before.
+2. [ ] **The Prusa write path in CI.** A test fixture writes a minimal made-up Prusa profile per printer (the
+   settings the engine reads, none of Prusa's own), so `convert_one` runs without PrusaSlicer, as #17 did
+   for the orca engine. Checks 9 and 10 skip themselves without PrusaSlicer, as they do today.
+3. [ ] **Prusa files record how they were made.** The zip comment becomes the stamp plus a small JSON record:
+   plate number, mapping, whether the model fit the bed, whether it was turned. Prusa files then differ
+   from today's by that comment alone.
+4. [ ] **`verify` re-checks Prusa files.** The engine's `verify()` takes an optional expectation (source,
+   plate, mapping, placement); `audit(f, src)` builds it from the file's record and the source; `cli verify`
+   calls it instead of the "convert again to re-check" warning, and takes `--map` for files written before
+   (3). It runs check 9 (PrusaSlicer `--info`) whenever PrusaSlicer is installed, as converting does.
+   Tests: a written file passes with and without `--source`; a wrong color or a model off the bed fails; a
+   file without a record passes with the warning. `docs/checks.md` and the CHANGELOG.
+5. [ ] **Prove it on a Mac:** `pytest`, the slicer tests (`SLICERBRIDGE_SLICER_TESTS=1 pytest -m slicer`), and
+   Gatefang for all 34 printers, the same as `main`'s apart from the Prusa files' zip comment (compare the
+   files' contents, not their bytes); `verify out/GateFang --source …` passes 34/34 with the Prusa files
+   checked. Then release.
 6. [ ] Set this ADR's status to Accepted once 1–4 are merged.
