@@ -1104,7 +1104,7 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
     for plate, pl, name in zip(src.plates, placements, names):
         final = OUT / name
         tmp = partial(final)
-        center, tower, _clear = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1), brim)
+        center, tower, clear = layout(pl, bed, prof.tower_width, plate, outlines(src.path).get(plate.number or 1), brim)
         apply_placement(plate, pl, bed, center)
         while True:
             try:
@@ -1140,8 +1140,14 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         else:
             tight = f", ⚠ bigger than the bed (fits at {math.floor(pl.max_scale * 1000) / 10:g}% or less)"
         tight += f", wipe tower at {tower[0]:.0f},{tower[1]:.0f}" if tower else ""
+        # No spot clear of the model for the tower: PrusaSlicer 2.9.6 stops slicing it with a wipe
+        # tower/model path conflict (Gatefang on the MMU3). A model bigger than the bed says so above.
+        crowded = bool(tower) and not clear and pl.fits
         print(f"\n  {'ok ' if ok else 'FAIL'} {src.slug} {where} -> {name}")
         print(f"       slots {mapping_text(mapping)}{turned}{tight}")
+        if crowded:
+            print("       ⚠ no spot for the wipe tower clear of the model: PrusaSlicer stops slicing it with a wipe "
+                  "tower/model path conflict. Move the tower, or scale the model down, in PrusaSlicer")
         for c in checks:
             print(f"       {('⚠' if c.warn else '✓') if c.ok else '✗'} {c.n}. {c.name}: {c.detail}")
         for w in stats.warnings:
@@ -1167,7 +1173,8 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
             f"{plate.painted:,} / {next(c.value for c in checks if c.n == '4'):,}",
             f"{passed}/{len(checks)} {'✓' if ok else '✗ FAIL'}"
             + (f" ⚠ bed ≤{math.floor(pl.max_scale * 1000) / 10:g}%" if not pl.fits else "")
-            + (" ⚠ slicer log" if any(c.warn and c.n == "10" and pl.fits for c in checks) else ""),
+            + (" ⚠ slicer log" if any(c.warn and c.n == "10" and pl.fits for c in checks) else "")
+            + (" ⚠ tower" if crowded else ""),
             name if ok else "(deleted)",
             ok,
         ))
