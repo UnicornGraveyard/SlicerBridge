@@ -18,7 +18,7 @@ your project once and writes it out in each printer's dialect without losing its
 and the way you set it up to print.
 
 SlicerBridge takes the project from whichever slicer you made it in (Bambu Studio, OrcaSlicer, or a printer
-maker's own fork of either) and writes one file for each of 34 printers, named for that printer
+maker's own fork of either) and writes one file for each of 35 printers, named for that printer
 (`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Its files for Bambu Lab,
 OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every file:
 
@@ -68,6 +68,7 @@ colors, and save the project.
 | Bambu Lab H2D Pro | `h2dpro` | 16 | Bambu Studio | — |
 | Bambu Lab H2C | `h2c` | 16 | Bambu Studio | — |
 | Bambu Lab X2D | `x2d` | 16 | Bambu Studio | — |
+| Bambu Lab H3C | `h3c` | 9 | Bambu Studio | — |
 | Creality K2 Plus | `k2plus` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 Pro | `k2pro` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 SE | `k2se` | 4 | OrcaSlicer | Creality Print |

@@ -11,7 +11,7 @@
     {
       "name": "slicerbridge",
       "source": "./plugin",
-      "description": "Convert a multicolor 3MF project for 34 multicolor printers, each file checked before it's written."
+      "description": "Convert a multicolor 3MF project for 35 multicolor printers, each file checked before it's written."
     }
   ]
 }

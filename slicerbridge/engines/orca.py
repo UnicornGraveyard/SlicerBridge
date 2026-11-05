@@ -115,6 +115,19 @@ CORE_COMPONENT = ns.q(ns.CORE, "component")
 P_PATH = ns.q(ns.PRODUCTION, "path")
 
 
+# Support's base spreads past the model's box: StoneBrow's tree support reached 8.5 to
+# 9 mm past it on the X2D, H2D and X1C (2026-11-05). The bed's edge clips it (the
+# P2S's stopped at 0.2 from a model 5.4 mm in), but where one nozzle can't reach the
+# whole bed nothing does: support printed with a filament on the H2D's or X2D's other
+# nozzle ran up to 3.5 mm into the strip that nozzle can't reach, and Bambu Studio
+# refused the file ("G-code in unprintable area of multi-extruder printers"). With
+# supports on, a nozzle's limit counts as NOZZLE_LIMIT_IN farther in: with the 5 mm
+# every model keeps from an edge, support that spreads SUPPORT_SPREAD stays 2 mm
+# inside. A full SUPPORT_SPREAD on top of the 5 left StoneBrow's X2D tower no room.
+SUPPORT_SPREAD = 9.0
+NOZZLE_LIMIT_IN = SUPPORT_SPREAD + 2.0 - 5.0
+
+
 @dataclass(frozen=True)
 class Bed:
     x0: float
@@ -134,6 +147,11 @@ class Bed:
         pts = [tuple(float(c) for c in p.split("x")) for p in settings["printable_area"]]
         plate = (max(p[0] for p in pts) - min(p[0] for p in pts), max(p[1] for p in pts) - min(p[1] for p in pts))
         x0, y0, x1, y1 = verify.reachable_area(settings)
+        if settings.get("enable_support") == "1":  # see SUPPORT_SPREAD
+            px0, py0, px1, py1 = (min(p[0] for p in pts), min(p[1] for p in pts),
+                                  max(p[0] for p in pts), max(p[1] for p in pts))
+            x0, y0 = x0 + NOZZLE_LIMIT_IN * (x0 > px0), y0 + NOZZLE_LIMIT_IN * (y0 > py0)
+            x1, y1 = x1 - NOZZLE_LIMIT_IN * (x1 < px1), y1 - NOZZLE_LIMIT_IN * (y1 < py1)
         tower = float(settings.get("prime_tower_width") or 35) if settings.get("enable_prime_tower") == "1" else None
         at = (float((settings.get("wipe_tower_x") or ["0"])[0]), float((settings.get("wipe_tower_y") or ["0"])[0]))
         return cls(x0, y0, x1, y1, float(settings["printable_height"]), tower,

@@ -201,14 +201,30 @@ def tower_area(cfg: dict) -> float:
     busiest layer has: IronJaw's K2 Pro tower (purging, 4 colors, 0.16 mm, 270 mm^3
     at most) printed about 45 x 60 mm against 40 x 211 that way. A flush tower counts
     a change for every three filaments, at least one, which puts it at 40 x 70.
+
+    A two-nozzle printer's tower is TWO_NOZZLE_TOWER times that.
     """
     k = len(cfg.get("filament_colour") or []) or 1
     lh = _first(cfg.get("layer_height")) or 0.2
+    nozzles = TWO_NOZZLE_TOWER if len(cfg.get("extruder_printable_area") or []) > 1 else 1.0
     if str(cfg.get("purge_in_prime_tower")) == "1":
         v = max(float(x) for x in cfg.get("flush_volumes_matrix") or ["0"]) * (_first(cfg.get("flush_multiplier")) or 1)
-        return 1.25 * max(1.0, k / 3) * v / lh
+        return nozzles * 1.25 * max(1.0, k / 3) * v / lh
     v = _first(cfg.get("prime_volume")) or 45
-    return 1.25 * k * v / lh
+    return nozzles * 1.25 * k * v / lh
+
+
+# A two-nozzle printer (H2D, H2D Pro, H2C, X2D) builds a bigger tower than one nozzle
+# for the same colors, once the slicer puts them on both nozzles: a layer that uses
+# both primes the tower on each nozzle change too. StoneBrow (4 colors, 0.16 mm,
+# 1,406 mm^2 by tower_area alone), 2026-11-05: the X2D's tower printed 55.2 x 52.4 mm
+# on its own ribs against 45.5 x 43.0, so its 10 mm brim ran 4 mm off the 256 mm bed
+# (Bambu Studio: "G-code outside of the printable area"); the H2D Pro's 72.3 x 69.0
+# on the tall ribs against 62.5 x 60.0; the H2D's 66.8 x 63.7. That's up to 1.6 times
+# the area. The same file's one-nozzle P2S, H2S, X1C and P1S towers came within 2 mm.
+# IronJaw's H2C tower stayed one nozzle's size (45.5 x 40.9) because its colors all
+# went on one nozzle; there this overestimates, which only costs room.
+TWO_NOZZLE_TOWER = 1.6
 
 
 def outline_reach(cfg: dict) -> float:
@@ -501,15 +517,24 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
     return info, problems, warnings, local
 
 
+# Kept between the tower's brim and the bed's edge: Bambu Studio checks the tower with
+# more conservative parameters than it slices with. The orca engine places it so
+# (TOWER_EDGE); a heavier step tried at that spot keeps it too, or StoneBrow's X2D got
+# a 10 mm brim estimated to reach the front edge exactly (2026-11-05).
+TOWER_EDGE_MIN = 2.0
+
+
 def tower_clear(z: zipfile.ZipFile, number: int, t: tuple, footprint: tuple, area: tuple) -> bool:
-    """Whether tower footprint `t` stays on the bed and off plate `number`'s model.
+    """Whether tower footprint `t` stays on the bed, TOWER_EDGE_MIN from its edge, and off plate `number`'s model.
 
     In the model's bounding box is fine where its outline leaves room.
     """
     on_model = overlaps(t, footprint) and (
         (outline := plate_outline(Path(z.filename), number, (0.0, 0.0), 1.0) if z.filename else None) is None
         or outline_hits(outline, t))
-    return not on_model and area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]
+    e = TOWER_EDGE_MIN
+    return (not on_model and area[0] + e <= t[0] and area[1] + e <= t[1]
+            and t[2] <= area[2] - e and t[3] <= area[3] - e)
 
 
 def owed_step(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> int | None:

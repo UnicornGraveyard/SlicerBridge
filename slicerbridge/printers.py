@@ -299,6 +299,11 @@ PRINTERS = {
     # which doesn't reach the bed's left 20.5 mm.
     "x2d":      Printer("Bambu Lab X2D", "BBL", "Bambu Lab X2D 0.4 nozzle", "0.16mm Standard @BBL X2D",
                         _generic("Generic ", " @BBL X2D 0.4 nozzle"), 16, "bambu"),
+    # Nine toolheads on a rack, which Bambu Studio's profile models as one extruder that reaches the
+    # whole bed. Its PLA and PETG presets are named without the nozzle.
+    "h3c":      Printer("Bambu Lab H3C", "BBL", "Bambu Lab H3C 0.4 nozzle", "0.16mm Standard @BBL H3C",
+                        {"PLA": "Generic PLA @BBL H3C", "PETG": "Generic PETG @BBL H3C",
+                         "ABS": "Generic ABS @BBL H3C 0.4 nozzle"}, 9, "bambu"),
 
     # ---- Creality (CFS), from OrcaSlicer.
     "k2plus":   Printer("Creality K2 Plus", "Creality", "Creality K2 Plus 0.4 nozzle",
