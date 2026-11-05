@@ -90,6 +90,17 @@ def test_a_file_whose_colors_come_out_wrong_fails_check_7_and_is_not_written(pro
     assert "✗ 7. config colors == mapped palette" in capsys.readouterr().out
 
 
+def test_a_wipe_tower_with_no_room_beside_the_model_is_warned_about(tmp_path, profiles, capsys):
+    """Gatefang on the MMU3: PrusaSlicer stops slicing it, the tower runs into the model."""
+    src = bambu_project(tmp_path / "wide.3mf", plates=1, size=215.0)  # fits the 250 x 220 bed, leaves no strip
+    assert prusa.convert(src, "Wide", ["mmu3"], tmp_path / "out") == (1, 0)
+    printed = capsys.readouterr().out
+    assert "⚠ no spot for the wipe tower clear of the model" in printed and "⚠ tower" in printed
+    small = bambu_project(tmp_path / "small.3mf", plates=1)
+    assert prusa.convert(small, "Small", ["mmu3", "indx4"], tmp_path / "out") == (2, 0)  # roomy; no tower at all
+    assert "no spot for the wipe tower" not in capsys.readouterr().out
+
+
 def test_a_single_plate_file_has_no_plate_in_its_name(tmp_path, profiles):
     src = bambu_project(tmp_path / "one.3mf", plates=1)
     assert prusa.convert(src, "One", ["xl"], tmp_path / "out") == (1, 0)
