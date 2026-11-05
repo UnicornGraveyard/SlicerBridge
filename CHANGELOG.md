@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 (2026-11-05)
 
 - Each printer's label, colors, vendor, engine and slicer come from one record (`printers.PrinterInfo`), not
   three tables that each listed every engine. Nothing a user sees changes (ADR-0001).

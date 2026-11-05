@@ -164,7 +164,7 @@ One PR each, in this order:
    (3). It runs check 9 (PrusaSlicer `--info`) whenever PrusaSlicer is installed, as converting does.
    Tests: a written file passes with and without `--source`; a wrong color or a model off the bed fails; a
    file without a record passes with the warning. `docs/checks.md` and the CHANGELOG.
-5. [ ] **Prove it on a Mac:** `pytest`, the slicer tests (`SLICERBRIDGE_SLICER_TESTS=1 pytest -m slicer`), and
+5. [x] **Prove it on a Mac:** `pytest`, the slicer tests (`SLICERBRIDGE_SLICER_TESTS=1 pytest -m slicer`), and
    Gatefang for all 34 printers, the same as `main`'s apart from the Prusa files' zip comment (compare the
    files' contents, not their bytes); `verify out/GateFang --source …` passes 34/34 with the Prusa files
    checked. Then release.
