@@ -6,7 +6,7 @@ from slicerbridge import printers as P
 
 
 def test_every_key_has_one_engine_and_a_label():
-    assert len(P.ALL) == len(set(P.ALL)) == 34
+    assert len(P.ALL) == len(set(P.ALL)) == 35
     for k in P.ALL:
         assert P.engine_of(k) in ("orca", "prusa", "u1")
         assert P.label_of(k) and P.tools_of(k) >= 4
@@ -104,6 +104,7 @@ BEFORE = {
     "h2dpro": ('Bambu Lab H2D Pro', 16, 'BBL', 'orca', 'Bambu Studio'),
     "h2c": ('Bambu Lab H2C', 16, 'BBL', 'orca', 'Bambu Studio'),
     "x2d": ('Bambu Lab X2D', 16, 'BBL', 'orca', 'Bambu Studio'),
+    "h3c": ('Bambu Lab H3C', 9, 'BBL', 'orca', 'Bambu Studio'),
     "k2plus": ('Creality K2 Plus', 4, 'Creality', 'orca', 'OrcaSlicer'),
     "k2pro": ('Creality K2 Pro', 4, 'Creality', 'orca', 'OrcaSlicer'),
     "k2se": ('Creality K2 SE', 4, 'Creality', 'orca', 'OrcaSlicer'),

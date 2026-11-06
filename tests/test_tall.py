@@ -86,14 +86,16 @@ def test_check_14_fails_a_tall_file_on_the_light_tower_and_passes_the_heavier(tm
         assert problems == [] and "slower tower only" in warnings[0]
         assert check.tall_tower(z, cfg, [(1, (0.0, 0.0, 0.0), (120.0, 120.0, 100.0))], "orca") == ([], [], [])
         # Room for the wider brim but not the longer ribs: the rest is owed, on the file's own ribs.
-        snug = {**cfg, "wipe_tower_x": ["220"], **tall.settings(cfg, tall.STOCK_RIBS["orca"])}
-        slower = {**cfg, "wipe_tower_x": ["220"], **tall.settings(cfg, tall.SLOWER["orca"])}
+        # (At 218 its brim ends 2.8 mm from the 270.5 mm bed's edge, past TOWER_EDGE_MIN.)
+        snug = {**cfg, "wipe_tower_x": ["218"], **tall.settings(cfg, tall.STOCK_RIBS["orca"])}
+        slower = {**cfg, "wipe_tower_x": ["218"], **tall.settings(cfg, tall.SLOWER["orca"])}
         problems = check.tall_tower(z, slower, boxes, "orca")[1]  # the slower tower alone isn't enough there
         assert problems and "prime_tower_brim_width" in problems[0] and "rib" not in problems[0]
         info, problems, _w = check.tall_tower(z, snug, boxes, "orca")
         assert problems == [] and "on its own ribs set" in info[0]
         # What the engine asks before it keeps a file: the step the tower's spot has room for.
-        assert [check.owed_step(z, {**cfg, "wipe_tower_x": [x]}, boxes, "orca") for x in ("200", "220", "235")] == [0, 1, 2]
+        assert [check.owed_step(z, {**cfg, "wipe_tower_x": [x]}, boxes, "orca") for x in ("200", "218", "235")] == [0, 1, 2]
+        assert check.owed_step(z, {**cfg, "wipe_tower_x": ["220"]}, boxes, "orca") == 2  # brim 0.8 mm from the edge
 
 
 def test_the_prusa_layout_says_whether_the_wider_brim_has_room():

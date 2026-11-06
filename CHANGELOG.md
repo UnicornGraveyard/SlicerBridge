@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- The Bambu Lab H3C (`h3c`, nine toolheads), from Bambu Studio's own presets. 35 printers in all.
+- A two-nozzle Bambu printer (H2D, H2D Pro, H2C, X2D) gets room for the bigger prime tower it builds when the
+  slicer puts the colors on both nozzles, 1.6 times one nozzle's. StoneBrow's X2D tower had been placed for
+  45.5 x 43 mm, printed 55.2 x 52.4, and its 10 mm brim ran 4 mm off the bed, so Bambu Studio refused the file
+  ("G-code outside of the printable area").
+- With supports on, a model on a two-nozzle printer is kept 6 mm farther from the edge one nozzle can't reach
+  past, so support spreading 9 mm past its box stays 2 mm inside. The bed's edge clips support, but one nozzle's
+  limit doesn't: StoneBrow's ran into the strip the H2D's and X2D's other nozzle can't reach, and Bambu Studio
+  refused the files ("G-code in unprintable area of multi-extruder printers").
+- Check 14, and the heavier tower step the engine tries at a tower's spot after placing it, keep the tower's brim
+  2 mm from the bed's edge, as placement does. StoneBrow's X2D had been given a 10 mm brim estimated to reach the
+  front edge exactly.
 - A Prusa file whose wipe tower finds no spot clear of the model says so: PrusaSlicer stops slicing it with a
   wipe tower/model path conflict (Gatefang on the MMU3, found testing 0.4.3). The engine worked this out and
   then dropped it, so only a tall print got a warning. The file is still written, as the OrcaSlicer printers'

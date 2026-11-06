@@ -17,6 +17,17 @@ def test_plates_are_spaced_by_the_whole_bed_not_the_reach():
     assert engine.plate_origin(1, 2, bed) == (350 * engine.PLATE_STRIDE, 0)
 
 
+def test_support_keeps_clear_of_a_nozzles_limit_but_not_the_beds_edge():
+    """StoneBrow's support spread 9 mm past its box, into the strip the H2D's other nozzle can't reach."""
+    bed = engine.Bed.of({**H2D, "printable_height": "325", "enable_prime_tower": "0", "enable_support": "1"})
+    assert (bed.x0, bed.x1) == (25 + engine.NOZZLE_LIMIT_IN, 325 - engine.NOZZLE_LIMIT_IN)
+    assert engine.NOZZLE_LIMIT_IN + 5 >= engine.SUPPORT_SPREAD + 2  # with the 5 mm every model keeps
+    assert (bed.y0, bed.y1) == (0, 320)  # the bed's own edge clips support
+    one = engine.Bed.of({"printable_area": H2D["printable_area"], "printable_height": "325",
+                         "enable_prime_tower": "0", "enable_support": "1"})
+    assert (one.x0, one.x1) == (0, 350)
+
+
 def test_an_auto_brim_is_a_brim_and_rib_walls_build_square():
     cfg = {"prime_tower_width": "60", "prime_tower_brim_width": "-1", "prime_tower_rib_wall": "1",
            "filament_colour": ["#000000"] * 4, "layer_height": "0.16"}
@@ -24,6 +35,18 @@ def test_an_auto_brim_is_a_brim_and_rib_walls_build_square():
     assert b == check.AUTO_TOWER_BRIM
     assert abs((w - check.RIB_EXTRA[0]) - (d - check.RIB_EXTRA[1])) < 1e-9  # square but for the ribs
     assert check.tower_size({**cfg, "prime_tower_rib_wall": "0"})[0] == 60 + check.WALL_EXTRA
+
+
+def test_a_two_nozzle_tower_is_sized_for_nozzle_changes():
+    """StoneBrow's X2D tower (4 colors, 0.16 mm, the printer's own ribs) printed 55.2 x 52.4 mm."""
+    one = {"prime_tower_width": "60", "prime_tower_brim_width": "10", "prime_tower_rib_wall": "1",
+           "prime_tower_extra_rib_length": "0", "prime_tower_rib_width": "8",
+           "filament_colour": ["#000000"] * 4, "layer_height": "0.16", "printable_area": H2D["printable_area"]}
+    two = {**one, "extruder_printable_area": H2D["extruder_printable_area"]}
+    assert abs(check.tower_area(two) - check.TWO_NOZZLE_TOWER * check.tower_area(one)) < 1e-9
+    w, d, _b = check.tower_size(two)
+    assert 55.2 <= w < 58 and 52.4 <= d < 55
+    assert check.tower_size(one)[0] < 50  # one nozzle: as before
 
 
 def test_a_big_triangle_marks_its_whole_outline():
