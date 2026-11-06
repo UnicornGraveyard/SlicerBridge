@@ -14,6 +14,10 @@
 - Check 14, and the heavier tower step the engine tries at a tower's spot after placing it, keep the tower's brim
   2 mm from the bed's edge, as placement does. StoneBrow's X2D had been given a 10 mm brim estimated to reach the
   front edge exactly.
+- A Prusa file whose wipe tower finds no spot clear of the model says so: PrusaSlicer stops slicing it with a
+  wipe tower/model path conflict (Gatefang on the MMU3, found testing 0.4.3). The engine worked this out and
+  then dropped it, so only a tall print got a warning. The file is still written, as the OrcaSlicer printers'
+  are: moving the tower or scaling the model is the downloader's to do in PrusaSlicer.
 
 ## 0.4.3 (2026-11-05)
 
