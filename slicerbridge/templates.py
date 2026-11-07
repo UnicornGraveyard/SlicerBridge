@@ -109,12 +109,15 @@ def filament_keys(settings: dict, slicer: Slicer) -> list[str]:
 # Per-filament settings the slicer adds to a project itself, which no filament
 # preset sets -- found as the lists one long per filament in a real 15-filament
 # Bambu Studio 2.8 project. filament_self_index (which filament each per-nozzle
-# entry belongs to) is renumbered by engines.orca.compose().
+# entry belongs to) is renumbered by engines.orca.compose(). Bambu Studio 2.9 adds
+# filament_map_2, filament_nozzle_map and filament_volume_map: which extruder,
+# hotend and flow each filament gets. Left one long, an H3C project built by hand
+# with two filaments wouldn't slice (2026-11-07).
 PROJECT_FILAMENT_KEYS = {
-    "default_filament_colour", "filament_is_mixed", "filament_map", "filament_mixed_components",
+    "default_filament_colour", "filament_is_mixed", "filament_map", "filament_map_2", "filament_mixed_components",
     "filament_mixed_gradient", "filament_mixed_gradient_curve", "filament_mixed_gradient_per_part",
-    "filament_mixed_gradient_range", "filament_mixed_sublayer_ratios", "first_x_layer_part_fan_speed",
-    "ironing_fan_speed", "overhang_threshold_participating_cooling",
+    "filament_mixed_gradient_range", "filament_mixed_sublayer_ratios", "filament_nozzle_map", "filament_volume_map",
+    "first_x_layer_part_fan_speed", "ironing_fan_speed", "overhang_threshold_participating_cooling",
 }
 
 

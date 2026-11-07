@@ -4,7 +4,10 @@
 
 1. Find the printer's presets in its slicer's bundled profiles
    (`OrcaSlicer.app/Contents/Resources/profiles/<Vendor>/machine|process|filament/*.json`): the printer preset,
-   the print preset closest to 0.16 mm layers, and a filament preset per type (PLA, PETG, ABS).
+   the print preset closest to 0.16 mm layers, and a filament preset per type (PLA, PETG, ABS, and TPU where it
+   has one; a Bambu Lab printer TPU for AMS too). A TPU preset's `filament_type` must be `TPU`, and its nozzle
+   temperature inside the PLA's recommended range and the PLA's inside its: OrcaSlicer won't slice two filaments
+   outside each other's ("Selected nozzle temperatures are incompatible").
 2. Add an entry to `PRINTERS` in `slicerbridge/printers.py`: label (as it should read in file names), vendor
    folder, those presets, how many colors its filament unit or toolheads hold, and `"bambu"` as the slicer for a
    Bambu Lab printer. Add it to a set if most owners will want it.
