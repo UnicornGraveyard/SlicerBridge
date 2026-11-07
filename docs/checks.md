@@ -8,8 +8,9 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
 
 1. Not a white blob: the palette isn't all white.
 2. Printer: the printer and print presets are that printer's.
-3. Colors: one filament per used slot, no more than the printer holds, each the printer's preset for its type.
-4. Paint present.
+3. Colors: one filament per used slot, no more than the printer holds, each the printer's preset for its type,
+   and of the source slot's type (a TPU stays a TPU, and plain TPU never becomes TPU for AMS).
+4. Paint present, or parts and objects in at least two filaments: a TPU band as its own part has no paint.
 5. Palette: filament k is the color of the k-th used source slot.
 6. Every paint state and extruder number is a filament the file has, and the part/object extruders are the
    source's, mapped.
@@ -20,7 +21,8 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
    the bed's edge gets a warning too.
 10. Version stamp: the slicer's own, from the printer's template.
 11. Size unchanged: each plate measures as in the source, to 0.01 mm.
-12. Settings complete: every per-filament setting has one value per filament, the flush matrix is K x K per
+12. Settings complete: every per-filament setting has one value per filament (or, on a Bambu printer with
+    nozzle variants, one per variant its preset has: the H2D's Generic TPU has four), the flush matrix is K x K per
     nozzle, the bed type is the one the slicer's app picks, and Bambu's slice leftovers are gone. And it reads
     the same in the brands' own slicers ([brand-slicers.md](brand-slicers.md)): line widths in mm, an exclusion
     area both readings agree on, the Kobra X's ACE block guarded.
@@ -45,7 +47,9 @@ And whatever the source:
 ## u1 engine (Snapmaker U1)
 
 1. Not a white blob (unsliced Bambu projects tricked earlier converters into 4 white filaments).
-2. The printer is the U1. 3. At most 4 filaments. 4. Paint present.
+2. The printer is the U1. 3. At most 4 filaments. 4. Paint present, or parts in at least two filaments.
+3b. Each extruder prints its source slot's kind of filament: a TPU stays a TPU (TPU for AMS prints as one),
+    PETG and PETG HF are PETG. A type the U1 has no preset for here prints as PLA, with a warning.
 5-8. Palette, extruder numbers, painted faces and paint leaves per filament, as above.
 9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base (its brim and the
    reach of its rib wall) may touch the model gets a warning.

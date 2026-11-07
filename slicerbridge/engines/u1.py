@@ -51,6 +51,7 @@ from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
 from .. import tall
+from .. import templates as templates_build
 from ..carry import carry_print_settings
 from ..checks import orca as orca_check, u1 as u1check
 from ..errors import Refusal
@@ -61,8 +62,24 @@ from ..source import palette
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "u1"  # bl2u1's U1 templates (GPLv3)
 TARGET_FILAMENTS = 4
-VALID_TYPES = {"PLA", "ABS", "TPU", "PETG-HF"}
 DEFAULT_PROFILE = "Snapmaker PLA SnapSpeed @U1"
+# Source filament_type -> the U1 preset an extruder printing it gets, with that preset's
+# own values (FILAMENTS): the template's are PLA's, and a TPU left on them printed at
+# 220 C and 15 mm^3/s, where Snapmaker's TPU 95A HF says 230 and 9 (2026-11-07). Plain
+# TPU gets Generic TPU, 240 C and 3.2 mm^3/s like Bambu's own Generic TPU; Bambu's
+# TPU for AMS (about 68D), which the U1 has no preset for, Snapmaker's TPU 95A HF, at
+# 230 C like it. PLA keeps the template's; another type prints as PLA, and says so.
+U1_PRESETS = {
+    "PETG": "Generic PETG",
+    "PETG-HF": "Snapmaker PETG HF",
+    "ABS": "Generic ABS",
+    "TPU": "Generic TPU",
+    "TPU-AMS": "Snapmaker TPU 95A HF @U1 0.4 nozzle",
+}
+# Those presets' values for one extruder, each through its inherits chain in Snapmaker
+# Orca's profiles: written by scripts/u1_filaments.py, so a file needs no Snapmaker Orca.
+FILAMENTS = DATA / "filaments.json"
+U1_MACHINE = "Snapmaker U1 (0.4 nozzle)"
 
 PAINT = re.compile(rb'( paint_color=")([0-9A-Fa-f]+)(")')
 # Filament numbers in model_settings.config: part/object extruders, and settings
@@ -121,6 +138,78 @@ def load_u1_profiles() -> list[dict]:
     for t, sid in zip(s.get("filament_type", []), s.get("filament_settings_id", [])):
         profiles.append({"type": t, "settings_id": sid})
     return profiles
+
+
+def preset_values(name: str, index: dict, template: dict) -> dict:
+    """{setting: value} one U1 extruder gets from filament preset `name`, its inherits chain applied.
+
+    Every setting the template keeps one of per extruder that the preset sets, and
+    filament_ids. Where a preset lists two values, the second is for the high-flow
+    hotend (filament_flow_support: standard, high_flow): the U1's standard one takes
+    the first, as Snapmaker Orca saved the template's SnapSpeed and the TPU 95A HF.
+    """
+    flat = templates_build.flatten("filament", name, index)
+    if flat.get("instantiation") != "true" or U1_MACHINE not in (flat.get("compatible_printers") or []):
+        raise Refusal(f"'{name}' isn't a filament preset for the {U1_MACHINE} in Snapmaker Orca")
+    values = {}
+    for k, v in flat.items():
+        slot = template.get(k)
+        if (k in templates_build.NOT_FILAMENT or k in ("filament_settings_id", "filament_colour")
+                or not isinstance(slot, list) or len(slot) != TARGET_FILAMENTS):
+            continue
+        values[k] = (v[0] if v else "") if isinstance(v, list) else v
+    values["filament_ids"] = flat.get("filament_id", "")
+    return values
+
+
+def filament_data(slicer=None) -> dict:
+    """FILAMENTS' contents, from the installed Snapmaker Orca (scripts/u1_filaments.py)."""
+    slicer = slicer or SLICERS["snapmaker"]
+    index = templates_build.preset_index("Snapmaker", slicer)
+    template = load_template(False)
+    presets = {}
+    for name in sorted(set(U1_PRESETS.values())):
+        values = preset_values(name, index, template)
+        presets[name] = {"filament_type": values["filament_type"], "values": values}
+    return {"source": "Snapmaker Orca's U1 filament presets, each through its inherits chain (scripts/u1_filaments.py)",
+            "snapmaker_orca": templates_build.app_version(slicer),
+            "keys": sorted({k for p in presets.values() for k in p["values"]}),
+            "presets": presets}
+
+
+def u1_filaments() -> dict:
+    return json.loads(FILAMENTS.read_text(encoding="utf-8"))
+
+
+def is_u1_project(cfg: dict) -> bool:
+    return str(cfg.get("printer_settings_id", "")).startswith("Snapmaker U1") or cfg.get("printer_model") == U1_LABEL
+
+
+def slot_filament(f: dict, slot: int, src_cfg: dict, pla: str, bundled: dict) -> tuple[str, str, dict, str]:
+    """(filament_type, preset, {setting: value}, note) for the extruder printing source slot `slot`.
+
+    A slot on a preset in FILAMENTS gets its values there: an older SlicerBridge U1 file's
+    TPU kept the template's PLA ones. A U1 project's own slot keeps its preset and values,
+    whatever its type. Otherwise the type's U1_PRESETS preset; PLA keeps the template's
+    values under `pla`; any other type prints as PLA, and the note says so.
+    """
+    t = f["type"]
+    names = src_cfg.get("filament_settings_id")
+    name = names[slot - 1] if isinstance(names, list) and slot <= len(names) else ""
+    if name in bundled["presets"]:
+        return bundled["presets"][name]["filament_type"], name, bundled["presets"][name]["values"], ""
+    if is_u1_project(src_cfg) and name:
+        values = {k: src_cfg[k][slot - 1] for k in bundled["keys"]
+                  if isinstance(src_cfg.get(k), list) and slot <= len(src_cfg[k])}
+        return values.get("filament_type") or t, name, values, ""
+    if t in U1_PRESETS:
+        name = U1_PRESETS[t]
+        note = (f"Bambu's TPU for AMS: the U1 has no preset for it, so it prints on {name} "
+                f"({bundled['presets'][name]['values'].get('nozzle_temperature')} C)" if t == "TPU-AMS" else "")
+        return bundled["presets"][name]["filament_type"], name, bundled["presets"][name]["values"], note
+    if t == "PLA":
+        return "PLA", pla, {}, ""
+    return "PLA", pla, {}, f"{t}: the U1 has no preset mapped for it here, so it prints as PLA ({pla})"
 
 
 def template_path(has_support: bool) -> Path:
@@ -562,6 +651,11 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         raise
     transforms = {oid: tr for pl in placements for oid, tr in pl.transforms.items()}
     identity = all(old == new for old, new in mapping.items())
+    # Each extruder's filament: its type, preset and that preset's values (slot_filament).
+    pmap = {p["type"]: p["settings_id"] for p in profiles}
+    pla = pmap.get("PLA") or (profiles[0]["settings_id"] if profiles else DEFAULT_PROFILE)
+    bundled = u1_filaments()
+    extruders = [slot_filament(f, s, orig, pla, bundled) for s, f in zip(used, ordered)]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = partial(out_path)
 
@@ -609,10 +703,10 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
             parent.remove(node)
 
         n = 1
-        for f in ordered:
+        for f, (ftype, _preset, _values, _note) in zip(ordered, extruders):
             node = ET.SubElement(parent, "filament")
             node.set("id", str(n))
-            node.set("type", f["type"] if f["type"] in VALID_TYPES else "PLA")
+            node.set("type", ftype)
             node.set("color", f["color"])
             node.set("used_m", "0")
             node.set("used_g", "0")
@@ -644,20 +738,22 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
             marked[0] = ";".join(sorted({k for k in str(marked[0]).split(";") if k} | set(carried)))
             combined["different_settings_to_system"] = marked
         combined.update(tower_extra)
-        colors, types = [], []
-        for f in ordered:
+        colors, types, presets = [], [], []
+        for i, (f, (ftype, preset, values, _note)) in enumerate(zip(ordered, extruders)):
             c = f["color"]
             c = (c + "FF") if len(c) == 7 else c  # RGBA
             colors.append(c.upper())
-            types.append(f["type"] if f["type"] in VALID_TYPES else "PLA")
+            types.append(ftype)
+            presets.append(preset)
+            for k, v in values.items():  # this extruder's column only, on a copy of the template's list
+                if isinstance(combined.get(k), list) and len(combined[k]) == TARGET_FILAMENTS:
+                    combined[k] = [*combined[k][:i], v, *combined[k][i + 1:]]
         while len(colors) < TARGET_FILAMENTS:
-            colors.append("#FFFFFFFF"); types.append("PLA")
+            colors.append("#FFFFFFFF"); types.append("PLA"); presets.append(pla)
 
         combined["filament_colour"] = colors
         combined["filament_type"] = types
-        pmap = {p["type"]: p["settings_id"] for p in profiles}
-        fallback = profiles[0]["settings_id"] if profiles else DEFAULT_PROFILE
-        combined["filament_settings_id"] = [pmap.get(t, fallback) for t in types]
+        combined["filament_settings_id"] = presets
 
         for k, v in list(combined.items()):
             if k.startswith("filament_") and isinstance(v, list) and 0 < len(v) != TARGET_FILAMENTS:
@@ -726,6 +822,9 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
           + ("  sliced" if sliced else ""))
     for line in sliced:
         print(f"       {line.split(': ', 1)[-1]}")
+    for i, (_t, _p, _v, note) in enumerate(extruders, start=1):
+        if note:
+            print(f"       extruder {i} is {note}")
     if kept:
         print("       kept the U1's own " + "; ".join(f"{tall.describe({k: u1[k]})} ({why})" for k, why in kept.items()))
     for w in slice_warnings:

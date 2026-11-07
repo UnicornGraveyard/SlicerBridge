@@ -630,9 +630,12 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
     for i, (t, sid) in enumerate(zip(cfg.get("filament_type", []), cfg.get("filament_settings_id", [])), start=1):
         if printer.filaments.get(t) != sid:
             problems.append(f"filament {i} is {t} on preset {sid!r}, not the {printer.label}'s {t} preset")
-    # 4. paint
-    if painted == 0:
-        problems.append("no paint_color data -- no color painting at all")
+    # 4. paint, or parts in their own filaments
+    parts = u1.part_filaments(ms)
+    if painted == 0 and len(parts) < 2:
+        problems.append("no paint_color data, and its parts print in one filament -- no colors at all")
+    elif painted == 0:
+        info.append(f"colors    : by part, no paint (filaments {parts})")
     if getattr(f.stat(), "st_flags", 0) & 0x8000:  # UF_HIDDEN
         problems.append("hidden in Finder (macOS hidden flag) -- chflags nohidden, or re-convert")
     problems += bed_problems
@@ -642,8 +645,12 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
     if file_stamp[0] != tpl_stamp[0]:
         problems.append(f"version stamp {file_stamp[0]!r} isn't OrcaSlicer's {tpl_stamp[0]!r}")
 
-    # 12. settings complete, nothing of Bambu's slice left
-    short = [key_ for key_ in meta["filament_keys"] if key_ in cfg and (not k or len(cfg[key_]) % k)]
+    # 12. settings complete, nothing of Bambu's slice left. A Bambu Studio printer with
+    # nozzle variants keeps an entry per variant a filament's preset has, which
+    # filament_self_index ties to its filament: the H2D's Generic TPU has four, its PLA one.
+    variants = len(cfg.get("filament_self_index") or [])
+    short = [key_ for key_ in meta["filament_keys"] if key_ in cfg
+             and (not k or len(cfg[key_]) % k) and len(cfg[key_]) != variants]
     if "filament_self_index" in cfg and sorted(set(cfg["filament_self_index"]), key=int) != [str(i) for i in range(1, k + 1)]:
         short.append("filament_self_index")
     if short:

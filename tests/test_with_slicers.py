@@ -42,6 +42,38 @@ def test_bambu_converts_and_slices(project, tmp_path, key):
     assert orca.convert(project, "Cube", [key], tmp_path / "out", slice_it=True) == (1, 0)
 
 
+def _tpu_band(tmp_path):
+    """A PLA part and a TPU part beside it, each on its own filament: no paint."""
+    from builders import bambu_project
+    return bambu_project(tmp_path / "band.3mf", palette=("#FFFFFF", "#3FBF6F"), types=["PLA", "TPU"], plates=1,
+                         size=20.0, parts=[(1, {}), (2, {"sparse_infill_density": "100%"})])
+
+
+# Two filaments on the H3C's rack, and plain TPU on the one H2D nozzle its preset allows.
+@pytest.mark.parametrize("key", ["h3c", "h2d", "k2plus"])
+def test_a_tpu_part_converts_and_slices(tmp_path, key):
+    need(printers.PRINTERS[key].slicer)
+    from slicerbridge.engines import orca
+    assert orca.convert(_tpu_band(tmp_path), "Band", [key], tmp_path / "out", slice_it=True) == (1, 0)
+
+
+def test_a_tpu_part_converts_and_slices_on_the_u1(tmp_path):
+    need("snapmaker")
+    from slicerbridge.engines import u1
+    assert u1.convert(_tpu_band(tmp_path), "Band", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
+
+
+def test_the_u1s_bundled_filament_values_are_snapmaker_orcas_own():
+    """data/u1/filaments.json, as Snapmaker Orca's profiles flatten here: if not, run scripts/u1_filaments.py."""
+    need("snapmaker")
+    from slicerbridge import templates
+    from slicerbridge.engines import u1
+    data = u1.u1_filaments()
+    if templates.app_version(printers.SLICERS["snapmaker"]) != data["snapmaker_orca"]:
+        pytest.skip(f"made from Snapmaker Orca {data['snapmaker_orca']}: run scripts/u1_filaments.py for this one")
+    assert u1.filament_data() == data
+
+
 def test_prusa_printers_in_one_run(project, tmp_path):
     """Placing a plate moves the source's build items: every printer must start from the source."""
     need("prusa")

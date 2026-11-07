@@ -19,7 +19,11 @@ every `paint_color` is re-encoded to match ([Panda2Prusa](https://github.com/liu
 color, say) are renumbered the same way.
 
 More used slots than the printer holds is a refusal, not a merge: which two colors become one is a design
-decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type (PLA, PETG, ABS); another type is refused.
+decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type (PLA,
+PETG, ABS, TPU, and on Bambu Lab printers Bambu's TPU for AMS: `printers.BAMBU_TYPES`); another type, or one the
+printer has no preset for, is refused. The two TPUs stay apart: plain TPU is soft and slow and an AMS can't feed it,
+TPU for AMS is harder and goes through one, and neither becomes the other. The Snapmaker U1's extruders get the
+values of their own U1 preset, from Snapmaker Orca's profiles (`data/u1/filaments.json`), not the template's PLA.
 
 ## Templates
 

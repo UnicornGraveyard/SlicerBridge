@@ -33,8 +33,12 @@ def _cube(size: float) -> tuple[list, list]:
 def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6579", "#2E8B57"),
                   types=None, plates: int = 2, size: float = 40.0, extruder: int = 1,
                   paint: dict | None = None, bed: float = 256.0, extra_settings: dict | None = None,
-                  application: str = "BambuStudio-02.08.02.61", client_version: str | None = "02.08.02.61") -> Path:
+                  application: str = "BambuStudio-02.08.02.61", client_version: str | None = "02.08.02.61",
+                  parts: list | None = None) -> Path:
     """Write a project: one cube per plate, on filament `extruder`, its faces painted per `paint`.
+
+    `parts`: instead, each plate's object is a row of cubes, one part each, [(filament, {setting: value})]
+    -- a TPU band as its own part, say -- unpainted unless `paint` says otherwise (the first part's faces).
 
     `application` and `client_version` are what saved it: QIDI Studio stamps "QIDIStudio-..." and,
     like Anycubic Slicer Next, writes no X-BBL-Client-Version (None).
@@ -43,14 +47,17 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
     so with extruder 1 the model uses slots 1, 3 and 5 of a 5-color palette.
     """
     types = list(types or ["PLA"] * len(palette))
-    paint = {0: 3, 1: 3, 2: 5, 3: 5} if paint is None else paint
+    paint = ({0: 3, 1: 3, 2: 5, 3: 5} if parts is None else {}) if paint is None else paint
+    parts = list(parts or [(extruder, {})])
+    k = len(parts)
     verts, faces = _cube(size)
 
-    # 3D/Objects/object_1.model: one mesh object per plate
+    # 3D/Objects/object_1.model: one mesh object per part of each plate's object
     meshes = []
-    for i in range(plates):
+    for i in range(plates * k):
         vx = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in verts)
-        tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"' + (f' paint_color="{leaf(paint[n])}"' if n in paint else "")
+        tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"' + (f' paint_color="{leaf(paint[n])}"'
+                                                                   if n in paint and i % k == 0 else "")
                        + "/>" for n, (a, b, c) in enumerate(faces))
         meshes.append(f'<object id="{i + 1}" type="model"><mesh><vertices>{vx}</vertices>'
                       f'<triangles>{tris}</triangles></mesh></object>')
@@ -62,10 +69,10 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
     # Bambu Studio lays plates out 1.2 beds apart.
     objs, items = [], []
     for i in range(plates):
-        oid = plates + i + 1
-        objs.append(f'<object id="{oid}" type="model"><components>'
-                    f'<component p:path="/3D/Objects/object_1.model" objectid="{i + 1}" '
-                    f'transform="1 0 0 0 1 0 0 0 1 {-size / 2} {-size / 2} 0"/></components></object>')
+        oid = plates * k + i + 1
+        comps = "".join(f'<component p:path="/3D/Objects/object_1.model" objectid="{i * k + j + 1}" '
+                        f'transform="1 0 0 0 1 0 0 0 1 {(j - k / 2) * size} {-size / 2} 0"/>' for j in range(k))
+        objs.append(f'<object id="{oid}" type="model"><components>{comps}</components></object>')
         x = i * bed * 1.2 + bed / 2
         items.append(f'<item objectid="{oid}" transform="1 0 0 0 1 0 0 0 1 {x} {bed / 2} 0" printable="1"/>')
     root_model = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" '
@@ -77,16 +84,19 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
 
     model_settings = ['<?xml version="1.0" encoding="UTF-8"?>\n<config>']
     for i in range(plates):
-        oid = plates + i + 1
+        oid = plates * k + i + 1
+        part_xml = "".join(
+            f'<part id="{i * k + j + 1}" subtype="normal_part"><metadata key="name" value="cube{i + 1}-{j + 1}"/>'
+            f'<metadata key="extruder" value="{e}"/>'
+            + "".join(f'<metadata key="{key}" value="{value}"/>' for key, value in extra.items()) + "</part>"
+            for j, (e, extra) in enumerate(parts))
         model_settings.append(
             f'<object id="{oid}"><metadata key="name" value="cube{i + 1}"/>'
-            f'<metadata key="extruder" value="{extruder}"/>'
-            f'<part id="{i + 1}" subtype="normal_part"><metadata key="name" value="cube{i + 1}"/>'
-            f'<metadata key="extruder" value="{extruder}"/></part></object>')
+            f'<metadata key="extruder" value="{extruder}"/>{part_xml}</object>')
     for i in range(plates):
         model_settings.append(
             f'<plate><metadata key="plater_id" value="{i + 1}"/><metadata key="locked" value="false"/>'
-            f'<model_instance><metadata key="object_id" value="{plates + i + 1}"/>'
+            f'<model_instance><metadata key="object_id" value="{plates * k + i + 1}"/>'
             f'<metadata key="instance_id" value="0"/></model_instance></plate>')
     model_settings.append("</config>")
 

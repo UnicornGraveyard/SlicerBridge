@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- TPU converts. Bambu's two TPUs stay apart: plain TPU (`TPU`, soft) gets every Bambu printer's Generic TPU, and
+  Bambu's TPU for AMS (`TPU-AMS`, about 68D) its Generic TPU for AMS; a plain TPU never becomes TPU for AMS. The
+  output says to load soft TPU by hand on the external spool, since an AMS can't feed it. On the H2D, H2D Pro,
+  H2C and X2D, which print plain TPU on one nozzle only, it's mapped to that nozzle, in the project and on each
+  plate, so a plate mapped by hand keeps it printable. Every OrcaSlicer-family
+  printer but the Creator 5 and 5 Pro gets its maker's own TPU preset; TPU for AMS, which none has a preset for,
+  is refused there with why. Sliced in each printer's own slicer, a test model with a TPU band as its own part
+  laid the TPU only in the band, at its preset's temperature, on all 11 Bambu printers, 17 OrcaSlicer-family
+  printers and the U1 (2026-11-07).
+- The U1 gives an extruder printing TPU, TPU for AMS, PETG, PETG HF or ABS that U1 preset's own values, from
+  Snapmaker Orca 2.4.1's profiles through each preset's inherits chain (`data/u1/filaments.json`, written by
+  `scripts/u1_filaments.py`), not only its name. The other values had stayed the template's PLA: a TPU printed at
+  220 C and 15 mm^3/s where Snapmaker's TPU 95A HF says 230 and 9. Plain PETG had printed as PLA. A U1 project's
+  own presets keep their values; a type the U1 has no preset for here still prints as PLA, and now says so.
+- A Bambu printer's walls and infill no longer all print in filament 1 when the project came from Snapmaker Orca
+  or another OrcaSlicer fork. Their project-wide wall, sparse and solid infill filament default to 1, where each
+  part's own filament wins; Bambu Studio 2.9's default is 0, and a 1 puts every part's walls and infill in
+  filament 1. Carried, it printed a TPU band in PLA without a word. They're carried now only where the project
+  marks them as the designer's.
+- The H3C names a hotend per filament for Bambu Studio (`Standard#2` for two), up to its stock rack's eight
+  Standard: told it had one, Bambu Studio printed a PLA and TPU project from one hotend and purged 8.2 g of TPU
+  for a 2.1 g part. `filament_map_2`, `filament_nozzle_map` and `filament_volume_map` get one entry per filament.
+- A model whose colors are its parts' or objects' own filaments, with no paint, passes check 4 on every printer.
+  Check 12 takes a Bambu filament with more nozzle variants than another (the H2D's Generic TPU has four, its PLA
+  one). The U1's audit checks each extruder prints its source slot's kind of filament (check 3b).
 - The Bambu Lab H3C (`h3c`, nine toolheads), from Bambu Studio's own presets. 35 printers in all.
 - A two-nozzle Bambu printer (H2D, H2D Pro, H2C, X2D) gets room for the bigger prime tower it builds when the
   slicer puts the colors on both nozzles, 1.6 times one nozzle's. StoneBrow's X2D tower had been placed for
