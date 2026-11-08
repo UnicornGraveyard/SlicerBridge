@@ -97,6 +97,15 @@ colors, and save the project.
 "File built for" is the slicer whose settings the file carries. Files for Creality, Elegoo, Anycubic, Flashforge
 and QIDI printers are written by OrcaSlicer and also checked in each maker's own slicer: see
 [docs/brand-slicers.md](docs/brand-slicers.md) for what those slicers read differently, and how the files handle it.
+
+Each filament gets the printer's own preset for its type: PLA, PETG, ABS and TPU. Bambu's two TPUs stay apart.
+Plain TPU (soft, 95A and the like) gets each Bambu printer's Generic TPU, and the output says to load it by hand on
+the external spool, since an AMS can't feed it; on the H2D, H2D Pro, H2C and X2D it goes on the one nozzle its
+preset allows. Bambu's TPU for AMS gets Generic TPU for AMS. Every OrcaSlicer-family printer gets its maker's own
+TPU preset, except the Flashforge Creator 5 and 5 Pro, whose TPU presets OrcaSlicer types otherwise, so TPU is
+refused there; none of them takes TPU for AMS. The U1 prints TPU on Generic TPU, and TPU for AMS on Snapmaker's
+TPU 95A HF, each with its own temperatures and speeds. The Prusa printers take PLA only.
+
 Missing your printer? [Ask for it](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=printer_request.yml),
 or [add it](docs/adding-a-printer.md).
 
