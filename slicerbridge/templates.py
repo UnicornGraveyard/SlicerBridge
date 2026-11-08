@@ -20,13 +20,14 @@ import json
 import re
 import plistlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 from .errors import Refusal
-from .printers import PRINTERS, SLICERS, TEMPLATES, Slicer, ensure_installed, not_found, run_slicer
+from .printers import CRASHES, PRINTERS, SLICERS, TEMPLATES, Slicer, ensure_installed, not_found, run_slicer
 
 # Not filament settings, though some filament preset files carry them.
 NOT_FILAMENT = {"from", "name", "inherits", "instantiation", "setting_id", "filament_id",
@@ -179,8 +180,24 @@ def _cube(path: Path) -> None:
     path.write_text("\n".join(lines + ["endsolid cube", ""]), encoding="utf-8")
 
 
+# How templates are built here: a cache built otherwise is rebuilt. 2: presets' `include`d files
+# applied (Bambu Studio 2.9.1), and a type that can't be built left out on its own (meta "missing").
+FORMAT = 2
+
+# What an included template file says about itself, not settings it lends.
+INCLUDE_OWN = {"name", "instantiation", "type", "from", "setting_id", "inherits", "include"}
+
+
 def flatten(kind: str, name: str, index: dict) -> dict:
-    """A preset with its whole `inherits` chain applied, parent first, as the app loads it."""
+    """A preset with its whole `inherits` chain applied, parent first, as the app loads it.
+
+    Bambu Studio 2.9.1's presets also `include` template files: a printer its start, end,
+    filament-change and layer-change G-code (the X1C's own is in "Bambu Lab X1 Carbon 0.4 nozzle
+    template machine_start_gcode"), a two-nozzle printer's filament its per-nozzle values. Each
+    level's included files go on over its parents, and its own settings over them: the H2D's
+    PLA Tough+ for the 0.6 nozzle keeps its 0.98 flow ratio over its template's 0.95. Left out,
+    the CLI took its built-in defaults: a generic start G-code on every Bambu printer (2026-11-08).
+    """
     chain, seen = [], set()
     while name:
         if name in seen or (kind, name) not in index:
@@ -191,7 +208,13 @@ def flatten(kind: str, name: str, index: dict) -> dict:
         name = d.get("inherits") or ""
     out: dict = {}
     for d in reversed(chain):
+        for part in d.get("include") or []:
+            if (kind, part) not in index:
+                raise Refusal(f"{kind} preset '{d.get('name')}' includes '{part}', which isn't among its slicer's profiles")
+            lent = json.loads(index[(kind, part)].read_text(encoding="utf-8"))
+            out.update({k: v for k, v in lent.items() if k not in INCLUDE_OWN})
         out.update(d)
+    out.pop("include", None)
     return out
 
 
@@ -270,6 +293,9 @@ def _legacy(key: str, raw, w: list[str], g: list[str]) -> bool:
     return False
 
 
+# Seconds one template's save may take: it takes about one.
+TEMPLATE_LIMIT = 300
+
 # More disagreements than this, after the formatting and legacy rewrites above,
 # means the presets didn't go in: QIDI's unresolved inheritance changed dozens.
 # Fewer are the loader's own adjustments, kept in meta.json and printed.
@@ -308,8 +334,33 @@ def _rewrite_settings(path: Path, settings: dict) -> None:
     tmp.replace(path)
 
 
+def off_range(settings: dict) -> str:
+    """Why a filament's own settings contradict themselves, or "": its print temperature outside the
+    range its own preset recommends. Anycubic's Kobra X ABS printed at 205 C, its PLA's, in
+    OrcaSlicer 2.4.2: a copied value, not a choice to follow."""
+    def first(k):
+        v = settings.get(k)
+        v = v[0] if isinstance(v, list) and v else v
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    lo, hi = first("nozzle_temperature_range_low"), first("nozzle_temperature_range_high")
+    if lo is None or hi is None:
+        return ""
+    for k in ("nozzle_temperature", "nozzle_temperature_initial_layer"):
+        t = first(k)
+        if t is not None and not lo <= t <= hi:
+            return f"its {k} is {t:g} C, outside the {lo:g}-{hi:g} C its own preset recommends"
+    return ""
+
+
 def build(key: str) -> list[str]:
-    """Write <cache>/templates/<key>/<TYPE>.3mf for one printer; returns problems (empty when fine)."""
+    """Write <cache>/templates/<key>/<TYPE>.3mf for one printer; returns problems (empty when fine).
+
+    A type whose template can't be made is left out, and why is kept in meta.json's "missing":
+    a model in that type is refused for this printer, and every other still converts. Only
+    PLA, the base every file is composed on, failing fails the printer."""
     p = PRINTERS[key]
     slicer = SLICERS[p.slicer]
     ensure_installed(slicer)
@@ -334,50 +385,23 @@ def build(key: str) -> list[str]:
         (tmp / "out").mkdir()
         machine = _for_cli("machine", p.machine, index, tmp)
         process = _for_cli("process", p.process, index, tmp, p.machine)
-        made, adjusted = {}, {}
+        made, adjusted, missing = {}, {}, {}
         for ftype, name in p.filaments.items():
-            if ("filament", name) not in index:
-                problems.append(f"no filament preset '{name}' in {slicer.profiles / p.vendor}")
+            try:
+                why, out = _one_template(slicer, p, ftype, name, index, machine, process, flat_machine, flat_process,
+                                         tmp)
+            except _Stalled as e:
+                return [str(e)]  # nothing kept: the next run builds them all again
+            if why and ftype == "PLA":
+                return [why]
+            if why:
+                missing[ftype] = why
                 continue
-            run = run_slicer(
-                [slicer.binary, "--outputdir", tmp / "out",
-                 "--load-settings", f"{machine};{process}",
-                 "--load-filaments", _for_cli("filament", name, index, tmp),
-                 "--export-3mf", f"{ftype}.3mf", tmp / "cube.stl"],
-                timeout=600, cwd=tmp)
-            out = tmp / "out" / f"{ftype}.3mf"
-            if run.returncode != 0 or not out.exists():
-                tail = " | ".join(line for line in (run.stdout + run.stderr).splitlines()[-4:] if line.strip())
-                problems.append(f"{slicer.name} couldn't save {p.label} with {name} (exit {run.returncode}): {tail}")
-                continue
-            with zipfile.ZipFile(out) as z:
-                s = json.loads(z.read("Metadata/project_settings.config"))
-            got = (s.get("printer_settings_id"), s.get("print_settings_id"), s.get("filament_settings_id"))
-            if got != (p.machine, p.process, [name]):
-                problems.append(f"{slicer.name} saved {got} for {p.label}, not the presets asked for")
-                continue
-            if slicer.name == "Bambu Studio":
-                # Bambu Studio's CLI swaps in "safe" machine limits for cloud slicing
-                # (cli_config.json: acceleration 6000 on an A1 mini whose preset says
-                # 20000). The app keeps the preset's; so do these files.
-                limits = {k: v for k, v in flat_machine.items() if k.startswith("machine_max_") and k in s}
-                s.update(limits)
-                _rewrite_settings(out, s)
-            # The proof the presets went in whole: every key they set, as saved.
-            off = disagreements(s, [flat_machine, flat_process, _flat_for_cli("filament", name, index)])
-            if len(off) > MAX_ADJUSTED:
-                problems.append(f"{p.label} with {name}: {slicer.name} saved {len(off)} setting(s) other than "
-                                f"its presets say: " + "; ".join(off[:5]))
-                continue
-            adjusted[ftype] = off
-            word = manual_change(s)
+            adjusted[ftype], made[ftype] = out
+            word = manual_change(_settings_of(made[ftype]))
             if word:
-                problems.append(f"{slicer.name}'s {p.machine} preset changes filament with {word}: a stop "
-                                f"for a person at every color change, not a multicolor printer")
-                continue
-            made[ftype] = out
-        if problems:
-            return problems
+                return [f"{slicer.name}'s {p.machine} preset changes filament with {word}: a stop "
+                        f"for a person at every color change, not a multicolor printer"]
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True)
@@ -387,16 +411,76 @@ def build(key: str) -> list[str]:
     with zipfile.ZipFile(dest / "PLA.3mf") as z:
         settings = json.loads(z.read("Metadata/project_settings.config"))
     (dest / "meta.json").write_text(json.dumps({
-        "slicer": slicer.name, "slicer_version": app_version(slicer),
+        "format": FORMAT, "slicer": slicer.name, "slicer_version": app_version(slicer),
         "machine": p.machine, "process": p.process, "filaments": p.filaments,
         "filament_keys": filament_keys(settings, slicer),
         "slicer_adjusted": {t: a for t, a in adjusted.items() if a},
+        "missing": missing,
     }, indent=2) + "\n", encoding="utf-8")
     return []
 
 
+class _Stalled(Exception):
+    """The slicer's command line hung or crashed, twice: not a fact about the type, so nothing is kept."""
+
+
+def _settings_of(path: Path) -> dict:
+    with zipfile.ZipFile(path) as z:
+        return json.loads(z.read("Metadata/project_settings.config"))
+
+
+def _one_template(slicer: Slicer, p, ftype: str, name: str, index: dict, machine: Path, process: Path,
+                  flat_machine: dict, flat_process: dict, tmp: Path) -> tuple[str, tuple]:
+    """("", (adjusted settings, saved file)) for one filament type's template, or (why not, ())."""
+    if ("filament", name) not in index:
+        return f"no filament preset '{name}' in {slicer.profiles / p.vendor}", ()
+    cmd = [slicer.binary, "--outputdir", tmp / "out", "--load-settings", f"{machine};{process}",
+           "--load-filaments", _for_cli("filament", name, index, tmp), "--export-3mf", f"{ftype}.3mf", tmp / "cube.stl"]
+    # Saving a cube takes about a second. Bambu Studio 2.9.1's command line, four at once beside its
+    # open app, now and then never finished (2026-11-08); it aborts now and then too. Either gets one
+    # more try, and a second is the slicer's, not the type's: a cached "no ASA here" would stay.
+    for attempt in (1, 2):
+        try:
+            run = run_slicer(cmd, timeout=TEMPLATE_LIMIT, cwd=tmp)
+        except subprocess.TimeoutExpired:
+            if attempt == 2:
+                raise _Stalled(f"{slicer.name}'s command line hung saving the {p.label} with {name}, twice "
+                               f"({TEMPLATE_LIMIT // 60} min each): nothing was kept, run it again") from None
+            continue
+        if run.returncode not in CRASHES:
+            break
+        if attempt == 2:
+            raise _Stalled(f"{slicer.name}'s command line crashed saving the {p.label} with {name}, twice "
+                           f"(exit {run.returncode}): nothing was kept, run it again")
+    out = tmp / "out" / f"{ftype}.3mf"
+    if run.returncode != 0 or not out.exists():
+        tail = " | ".join(line for line in (run.stdout + run.stderr).splitlines()[-4:] if line.strip())
+        return f"{slicer.name} couldn't save {p.label} with {name} (exit {run.returncode}): {tail}", ()
+    s = _settings_of(out)
+    got = (s.get("printer_settings_id"), s.get("print_settings_id"), s.get("filament_settings_id"))
+    if got != (p.machine, p.process, [name]):
+        return f"{slicer.name} saved {got} for {p.label}, not the presets asked for", ()
+    if slicer.name == "Bambu Studio":
+        # Bambu Studio's CLI swaps in "safe" machine limits for cloud slicing
+        # (cli_config.json: acceleration 6000 on an A1 mini whose preset says
+        # 20000). The app keeps the preset's; so do these files.
+        limits = {k: v for k, v in flat_machine.items() if k.startswith("machine_max_") and k in s}
+        s.update(limits)
+        _rewrite_settings(out, s)
+    # The proof the presets went in whole: every key they set, as saved.
+    off = disagreements(s, [flat_machine, flat_process, _flat_for_cli("filament", name, index)])
+    if len(off) > MAX_ADJUSTED:
+        return (f"{p.label} with {name}: {slicer.name} saved {len(off)} setting(s) other than "
+                f"its presets say: " + "; ".join(off[:5])), ()
+    contradiction = off_range(s)
+    if contradiction:
+        return f"{name} isn't used for {p.label}: {contradiction}", ()
+    return "", (off, out)
+
+
 def load(key: str, install: bool = True) -> tuple[dict, dict]:
-    """(meta, {filament type: project settings}) for one printer.
+    """(meta, {filament type: project settings}) for one printer: each type built, less
+    meta["missing"], the ones that couldn't be (build()).
 
     Built first if missing, or rebuilt if its slicer or presets have changed
     since: settings from another slicer version, or another preset, would
@@ -411,8 +495,9 @@ def load(key: str, install: bool = True) -> tuple[dict, dict]:
     if not slicer.installed:
         raise Refusal(not_found(slicer))
     meta = json.loads((dest / "meta.json").read_text(encoding="utf-8")) if (dest / "meta.json").exists() else {}
-    stale = (meta.get("slicer_version") != app_version(slicer) or meta.get("machine") != p.machine
-             or meta.get("process") != p.process or meta.get("filaments") != p.filaments)
+    stale = (meta.get("format") != FORMAT or meta.get("slicer_version") != app_version(slicer)
+             or meta.get("machine") != p.machine or meta.get("process") != p.process
+             or meta.get("filaments") != p.filaments)
     if stale:
         problems = build(key)
         if problems:
@@ -420,6 +505,6 @@ def load(key: str, install: bool = True) -> tuple[dict, dict]:
     meta = json.loads((dest / "meta.json").read_text(encoding="utf-8"))
     settings = {}
     for ftype in PRINTERS[key].filaments:
-        with zipfile.ZipFile(dest / f"{ftype}.3mf") as z:
-            settings[ftype] = json.loads(z.read("Metadata/project_settings.config"))
+        if ftype not in meta.get("missing", {}):
+            settings[ftype] = _settings_of(dest / f"{ftype}.3mf")
     return meta, settings

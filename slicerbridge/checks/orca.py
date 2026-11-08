@@ -67,16 +67,33 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import templates as templates_build
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, refused_settings, run_slicer
+from ..printers import (BAMBU_TYPES, CRASHES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, refused_settings,
+                        run_slicer)
 from . import u1
 
 
 EPS = 1e-4
 SLICE_LIMIT = 1200  # seconds; a 2-plate, 4-color model slices in 1-2 minutes per printer
-# SIGABRT and SIGSEGV, as subprocess or as the shell reports them, and on Windows an
-# access violation, a heap corruption and a failed stack check (0xC0000005, 0xC0000374, 0xC0000409).
-CRASHES = {-6, -11, 134, 139, 0xC0000005, 0xC0000374, 0xC0000409}
 VERSION_REFUSED = 232  # CLI_FILE_VERSION_NOT_SUPPORTED (-24) as an exit status
+# What a slicer says when it won't print two filaments together for their temperatures, and the
+# preference that lets it: OrcaSlicer 2.4.2 holds each filament's temperature to the others'
+# recommended ranges on a printer whose filaments share one nozzle; Snapmaker Orca 2.4.1, like
+# Bambu Studio's rule, won't mix a high-temperature type (ABS, ASA, PC, PA) with a low one (PLA,
+# TPU, PVA). The app's preference is off until the downloader turns it on; its command line's
+# --allow-mix-temp is the same switch.
+MIXED_TEMPERATURES = ("Selected nozzle temperatures are incompatible", "large difference of temperature")
+MIXED_PREFERENCE = {"OrcaSlicer": "Preferences > Control > Slicing > Remove mixed temperature restriction",
+                    "Snapmaker Orca": "Preferences > Allow high/low temperature filament mixing"}
+# The slicers whose command line takes --allow-mix-temp. Snapmaker Orca 2.4.1's calls it an invalid
+# option, and reads its preference (allow_filament_temp_mixing) neither from the project nor from
+# a --datadir's Snapmaker_Orca.conf: it's checked on a copy whose high-temperature filaments are
+# typed PETG, which its rule mixes with either. Their temperatures are the file's own.
+MIX_SWITCH = {"OrcaSlicer", "Bambu Studio"}
+# Snapmaker Orca 2.4.1's two lists (resources/info/filament_info.json): it won't slice one of the
+# first with one of the second. PETG and HIPS mix with either; a type in neither isn't held.
+HIGH_TEMP_TYPES = {"ABS", "ASA", "PC", "PA", "PA-CF", "PA-GF", "PA6-CF", "PET-CF", "PPS", "PPS-CF", "PPA-CF",
+                   "PPA-GF", "ABS-GF", "ASA-Aero"}
+LOW_TEMP_TYPES = {"PLA", "TPU", "PLA-CF", "PLA-AERO", "PVA", "BVOH", "SBS"}
 # CLI_GCODE_PATH_CONFLICTS (-101), as Windows and as a shell report it: the slicer's
 # own word that the tower hit the model, with or without a line in the log saying so.
 CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
@@ -822,6 +839,19 @@ def gcode_facts(path: Path) -> dict:
             "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams}
 
 
+def retyped(f: Path, dest: Path, types: dict) -> Path:
+    """A copy of f, only for slicing, with each filament type in `types` named as its value."""
+    with zipfile.ZipFile(f) as zin, zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                s = json.loads(data)
+                s["filament_type"] = [types.get(t, t) for t in s.get("filament_type", [])]
+                data = json.dumps(s, indent=4).encode()
+            zout.writestr(item, data)
+    return dest
+
+
 def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict:
     """Copy f to dest with every plate bigger than the bed scaled down to fit, about its own center.
 
@@ -920,6 +950,7 @@ class Slice:
     problems: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     version: str = ""                              # the note that it needed --allow-newer-file
+    mixed: str = ""                                # the note that it needed --allow-mix-temp
     skipped: str = ""                              # why it wasn't sliced at all
     crash_note: str = ""                           # said instead of failing, if its command line crashed
 
@@ -935,7 +966,7 @@ class Slice:
         excused = self.crashed and bool(self.crash_note)
         info = (["sliced    : a copy with " + ", ".join(f"plate {n} at {v * 100:g}%" for n, v in self.scales.items())
                  + ", as a downloader would scale it"] if self.scales else [])
-        warnings = [self.version] if self.version else []
+        warnings = [w for w in (self.version, self.mixed) if w]
         if self.retried is not None and not excused:
             warnings.append(f"{self.slicer} crashed (exit {self.retried}) and was run again")
         warnings += self.warnings
@@ -971,14 +1002,19 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
     # to its SLIC3R_VERSION, 01.10.01.50 (src/Snapmaker_Orca.cpp). Any other slicer
     # gets the file as a downloader would, and a refusal is noted.
     newer = slicer in (SLICERS["orca"], SLICERS["snapmaker"])
+    mix, retype = False, {}
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def run_on(crowded: bool) -> tuple[subprocess.CompletedProcess, dict]:
             target = Path(tmp) / "scaled.3mf"
             scales = scaled_to_fit(f, target, cfg, crowded)
+            path = target if scales else f
+            if retype:
+                path = retyped(path, Path(tmp) / "retyped.3mf", retype)
             # A slicer can loop forever (OrcaSlicer 2.4.2's seam placer did): a slice that
             # hasn't finished in SLICE_LIMIT seconds is a failure, not a wait.
             cmd = [str(slicer.binary), *slicer.cli, *(["--allow-newer-file"] if newer else []),
-                   "--outputdir", tmp, "--slice", "0", str(target if scales else f)]
+                   *(["--allow-mix-temp"] if mix else []),
+                   "--outputdir", tmp, "--slice", "0", str(path)]
             try:
                 run = run_slicer(cmd, timeout=SLICE_LIMIT)
             except subprocess.TimeoutExpired:
@@ -992,6 +1028,20 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
             result.version = (f"{slicer.name}'s command line won't take the file's version ({file_stamp}) without "
                               f"--allow-newer-file (sliced with it)")
             newer = True
+            run, scales = run_on(False)
+        if run.returncode != 0 and any(m in run.stdout + run.stderr for m in MIXED_TEMPERATURES):
+            # The designer's filaments, which this slicer prints together only once its
+            # preference allows it: the file is right, so it's sliced the way they'd slice it.
+            where = MIXED_PREFERENCE.get(slicer.name, "its preferences")
+            if slicer.name in MIX_SWITCH:
+                mix, how = True, "sliced with it on"
+            else:
+                hot = sorted(set(cfg.get("filament_type") or []) & HIGH_TEMP_TYPES)
+                retype = {t: "PETG" for t in hot}
+                how = (f"its command line has no switch for it: sliced on a copy with {', '.join(hot)} typed PETG, "
+                       f"at the file's own temperatures")
+            result.mixed = (f"{slicer.name} won't slice these filaments together until {where} is on: their "
+                            f"temperatures are too far apart for it ({how})")
             run, scales = run_on(False)
         if run.returncode in CRASHES:
             # Bambu Studio 2.8.2 sometimes aborts after slicing, in GCodeProcessor's

@@ -111,6 +111,12 @@ def _installs(mac: tuple, windows: tuple) -> tuple:
     return windows + tuple(c.replace("%ProgramFiles%", "%ProgramW6432%") for c in windows)
 
 
+# A slicer's command line that crashed: SIGABRT and SIGSEGV, as subprocess or as the shell reports them,
+# and on Windows an access violation, a heap corruption and a failed stack check (0xC0000005,
+# 0xC0000374, 0xC0000409).
+CRASHES = {-6, -11, 134, 139, 0xC0000005, 0xC0000374, 0xC0000409}
+
+
 def run_slicer(cmd: list, timeout: int, cwd: Path | str | None = None) -> subprocess.CompletedProcess:
     """Run a slicer's command line and capture what it says.
 
@@ -269,75 +275,165 @@ class Printer:
     slicer: str = "orca"
 
 
-def _generic(prefix: str, suffix: str, types=("PLA", "PETG", "ABS")) -> dict:
-    return {t: f"{prefix}{t}{suffix}" for t in types}
-
-
-WITH_TPU = ("PLA", "PETG", "ABS", "TPU")
-
-
-def _bambu(suffix: str, types=("PLA", "PETG", "ABS"), ams: str | None = None, **named) -> dict:
-    """A Bambu printer's Generic presets: `suffix` after each type's name, TPU's too; "TPU for AMS"
-    (BAMBU_TYPES) has `ams` after it where that differs. `named`: types whose preset is named otherwise."""
-    return {**_generic("Generic ", suffix, (*types, "TPU")), "TPU-AMS": f"Generic TPU for AMS{suffix if ams is None else ams}",
-            **named}
-
-
+# Each printer's filaments: a preset for each of MAIN_TYPES its own slicer has one for, typed
+# exactly that (filament_type), listing the printer, and printing within its own recommended
+# range (templates.py checks the last). A type missing here is refused for that printer.
 PRINTERS = {
-    # ---- Bambu Lab, from Bambu Studio's own profiles. An AMS chains up to 4
-    # units (16 spools); the A1 and A1 mini's AMS lite holds 4. Every one has a
-    # Generic preset for both TPUs (BAMBU_TYPES).
+    # ---- Bambu Lab, from Bambu Studio's own profiles: its Generic preset for each type. An AMS
+    # chains up to 4 units (16 spools); the A1 and A1 mini's AMS lite holds 4. Every one has a
+    # Generic preset for both TPUs (BAMBU_TYPES); the open A1 mini has none for ABS, ASA, PC or PA.
     "a1mini":   Printer("Bambu Lab A1 mini", "BBL", "Bambu Lab A1 mini 0.4 nozzle", "0.16mm Optimal @BBL A1M",
-                        _bambu(" @BBL A1M", ("PLA", "PETG")), 4, "bambu"),
+                        {"PLA": "Generic PLA @BBL A1M", "PETG": "Generic PETG @BBL A1M",
+                         "PCTG": "Generic PCTG @BBL A1M", "PLA-CF": "Generic PLA-CF @BBL A1M",
+                         "PETG-CF": "Generic PETG-CF @BBL A1M", "HIPS": "Generic HIPS @BBL A1M",
+                         "PVA": "Generic PVA @BBL A1M", "BVOH": "Generic BVOH @BBL A1M",
+                         "TPU": "Generic TPU @BBL A1M", "TPU-AMS": "Generic TPU for AMS @BBL A1M"}, 4, "bambu"),
     "a1":       Printer("Bambu Lab A1", "BBL", "Bambu Lab A1 0.4 nozzle", "0.16mm Optimal @BBL A1",
-                        _bambu(" @BBL A1"), 4, "bambu"),
+                        {"PLA": "Generic PLA @BBL A1", "PETG": "Generic PETG @BBL A1", "PCTG": "Generic PCTG @BBL A1",
+                         "ABS": "Generic ABS @BBL A1", "ASA": "Generic ASA @BBL A1", "PC": "Generic PC @BBL A1",
+                         "PA": "Generic PA @BBL A1", "PLA-CF": "Generic PLA-CF @BBL A1",
+                         "PETG-CF": "Generic PETG-CF @BBL A1", "PA-CF": "Generic PA-CF @BBL A1",
+                         "HIPS": "Generic HIPS @BBL A1", "PVA": "Generic PVA @BBL A1", "BVOH": "Generic BVOH @BBL A1",
+                         "TPU": "Generic TPU @BBL A1", "TPU-AMS": "Generic TPU for AMS @BBL A1"}, 4, "bambu"),
     "p1s":      Printer("Bambu Lab P1S", "BBL", "Bambu Lab P1S 0.4 nozzle", "0.16mm Optimal @BBL X1C",
-                        _bambu("", ams=" @BBL X1C"), 16, "bambu"),
+                        {"PLA": "Generic PLA", "PETG": "Generic PETG", "PCTG": "Generic PCTG @BBL X1C",
+                         "ABS": "Generic ABS", "ASA": "Generic ASA", "PC": "Generic PC @BBL P1S", "PA": "Generic PA",
+                         "PLA-CF": "Generic PLA-CF", "PETG-CF": "Generic PETG-CF @BBL X1C", "PA-CF": "Generic PA-CF",
+                         "HIPS": "Generic HIPS @BBL X1C", "PVA": "Generic PVA", "BVOH": "Generic BVOH @BBL X1C",
+                         "TPU": "Generic TPU", "TPU-AMS": "Generic TPU for AMS @BBL X1C"}, 16, "bambu"),
     "p2s":      Printer("Bambu Lab P2S", "BBL", "Bambu Lab P2S 0.4 nozzle", "0.16mm Standard @BBL P2S",
-                        _bambu(" @BBL P2S"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL P2S", "PETG": "Generic PETG @BBL P2S",
+                         "PCTG": "Generic PCTG @BBL P2S", "ABS": "Generic ABS @BBL P2S",
+                         "ASA": "Generic ASA @BBL P2S", "PC": "Generic PC @BBL P2S", "PA": "Generic PA @BBL P2S",
+                         "PLA-CF": "Generic PLA-CF @BBL P2S", "PETG-CF": "Generic PETG-CF @BBL P2S",
+                         "PA-CF": "Generic PA-CF @BBL P2S", "HIPS": "Generic HIPS @BBL P2S",
+                         "PVA": "Generic PVA @BBL P2S", "BVOH": "Generic BVOH @BBL P2S",
+                         "TPU": "Generic TPU @BBL P2S", "TPU-AMS": "Generic TPU for AMS @BBL P2S"}, 16, "bambu"),
     "x1c":      Printer("Bambu Lab X1 Carbon", "BBL", "Bambu Lab X1 Carbon 0.4 nozzle", "0.16mm Optimal @BBL X1C",
-                        _bambu("", ams=" @BBL X1C"), 16, "bambu"),
+                        {"PLA": "Generic PLA", "PETG": "Generic PETG", "PCTG": "Generic PCTG @BBL X1C",
+                         "ABS": "Generic ABS", "ASA": "Generic ASA", "PC": "Generic PC", "PA": "Generic PA",
+                         "PLA-CF": "Generic PLA-CF", "PETG-CF": "Generic PETG-CF @BBL X1C", "PA-CF": "Generic PA-CF",
+                         "HIPS": "Generic HIPS @BBL X1C", "PVA": "Generic PVA", "BVOH": "Generic BVOH @BBL X1C",
+                         "TPU": "Generic TPU", "TPU-AMS": "Generic TPU for AMS @BBL X1C"}, 16, "bambu"),
     "h2s":      Printer("Bambu Lab H2S", "BBL", "Bambu Lab H2S 0.4 nozzle", "0.16mm Standard @BBL H2S",
-                        _bambu(" @BBL H2S", ("PLA", "PETG"), ABS="Generic ABS @BBL H2S 0.4 nozzle"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL H2S", "PETG": "Generic PETG @BBL H2S",
+                         "PCTG": "Generic PCTG @BBL H2S 0.4 nozzle", "ABS": "Generic ABS @BBL H2S 0.4 nozzle",
+                         "ASA": "Generic ASA @BBL H2S 0.4 nozzle", "PC": "Generic PC @BBL H2S",
+                         "PA": "Generic PA @BBL H2S 0.4 nozzle", "PLA-CF": "Generic PLA-CF @BBL H2S",
+                         "PETG-CF": "Generic PETG-CF @BBL H2S", "PA-CF": "Generic PA-CF @BBL H2S 0.4 nozzle",
+                         "HIPS": "Generic HIPS @BBL H2S 0.4 nozzle", "PVA": "Generic PVA @BBL H2S 0.4 nozzle",
+                         "BVOH": "Generic BVOH @BBL H2S 0.4 nozzle", "TPU": "Generic TPU @BBL H2S",
+                         "TPU-AMS": "Generic TPU for AMS @BBL H2S"}, 16, "bambu"),
     "h2d":      Printer("Bambu Lab H2D", "BBL", "Bambu Lab H2D 0.4 nozzle", "0.16mm Standard @BBL H2D",
-                        _bambu(" @BBL H2D"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL H2D", "PETG": "Generic PETG @BBL H2D",
+                         "PCTG": "Generic PCTG @BBL H2D", "ABS": "Generic ABS @BBL H2D",
+                         "ASA": "Generic ASA @BBL H2D", "PC": "Generic PC @BBL H2D", "PA": "Generic PA @BBL H2D",
+                         "PLA-CF": "Generic PLA-CF @BBL H2D", "PETG-CF": "Generic PETG-CF @BBL H2D",
+                         "PA-CF": "Generic PA-CF @BBL H2D", "HIPS": "Generic HIPS @BBL H2D",
+                         "PVA": "Generic PVA @BBL H2D", "BVOH": "Generic BVOH @BBL H2D",
+                         "TPU": "Generic TPU @BBL H2D", "TPU-AMS": "Generic TPU for AMS @BBL H2D"}, 16, "bambu"),
     "h2dpro":   Printer("Bambu Lab H2D Pro", "BBL", "Bambu Lab H2D Pro 0.4 nozzle", "0.16mm Standard @BBL H2DP",
-                        _bambu(" @BBL H2DP"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL H2DP", "PETG": "Generic PETG @BBL H2DP",
+                         "PCTG": "Generic PCTG @BBL H2DP", "ABS": "Generic ABS @BBL H2DP",
+                         "ASA": "Generic ASA @BBL H2DP", "PC": "Generic PC @BBL H2DP", "PA": "Generic PA @BBL H2DP",
+                         "PLA-CF": "Generic PLA-CF @BBL H2DP", "PETG-CF": "Generic PETG-CF @BBL H2DP",
+                         "PA-CF": "Generic PA-CF @BBL H2DP", "HIPS": "Generic HIPS @BBL H2DP",
+                         "PVA": "Generic PVA @BBL H2DP", "BVOH": "Generic BVOH @BBL H2DP",
+                         "TPU": "Generic TPU @BBL H2DP", "TPU-AMS": "Generic TPU for AMS @BBL H2DP"}, 16, "bambu"),
     "h2c":      Printer("Bambu Lab H2C", "BBL", "Bambu Lab H2C 0.4 nozzle", "0.16mm Standard @BBL H2C",
-                        _bambu(" @BBL H2C 0.4 nozzle"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL H2C 0.4 nozzle", "PETG": "Generic PETG @BBL H2C 0.4 nozzle",
+                         "PCTG": "Generic PCTG @BBL H2C 0.4 nozzle", "ABS": "Generic ABS @BBL H2C 0.4 nozzle",
+                         "ASA": "Generic ASA @BBL H2C 0.4 nozzle", "PC": "Generic PC @BBL H2C 0.4 nozzle",
+                         "PA": "Generic PA @BBL H2C 0.4 nozzle", "PLA-CF": "Generic PLA-CF @BBL H2C 0.4 nozzle",
+                         "PETG-CF": "Generic PETG-CF @BBL H2C 0.4 nozzle",
+                         "PA-CF": "Generic PA-CF @BBL H2C 0.4 nozzle", "HIPS": "Generic HIPS @BBL H2C 0.4 nozzle",
+                         "PVA": "Generic PVA @BBL H2C 0.4 nozzle", "BVOH": "Generic BVOH @BBL H2C 0.4 nozzle",
+                         "TPU": "Generic TPU @BBL H2C 0.4 nozzle",
+                         "TPU-AMS": "Generic TPU for AMS @BBL H2C 0.4 nozzle"}, 16, "bambu"),
     # Two nozzles, like the H2D: the left one direct drive, the right one Bowden (meant for supports),
     # which doesn't reach the bed's left 20.5 mm.
     "x2d":      Printer("Bambu Lab X2D", "BBL", "Bambu Lab X2D 0.4 nozzle", "0.16mm Standard @BBL X2D",
-                        _bambu(" @BBL X2D 0.4 nozzle"), 16, "bambu"),
+                        {"PLA": "Generic PLA @BBL X2D 0.4 nozzle", "PETG": "Generic PETG @BBL X2D 0.4 nozzle",
+                         "PCTG": "Generic PCTG @BBL X2D 0.4 nozzle", "ABS": "Generic ABS @BBL X2D 0.4 nozzle",
+                         "ASA": "Generic ASA @BBL X2D 0.4 nozzle", "PC": "Generic PC @BBL X2D 0.4 nozzle",
+                         "PA": "Generic PA @BBL X2D 0.4 nozzle", "PLA-CF": "Generic PLA-CF @BBL X2D 0.4 nozzle",
+                         "PETG-CF": "Generic PETG-CF @BBL X2D 0.4 nozzle",
+                         "PA-CF": "Generic PA-CF @BBL X2D 0.4 nozzle", "HIPS": "Generic HIPS @BBL X2D 0.4 nozzle",
+                         "PVA": "Generic PVA @BBL X2D 0.4 nozzle", "BVOH": "Generic BVOH @BBL X2D 0.4 nozzle",
+                         "TPU": "Generic TPU @BBL X2D 0.4 nozzle",
+                         "TPU-AMS": "Generic TPU for AMS @BBL X2D 0.4 nozzle"}, 16, "bambu"),
     # Nine toolheads on a rack, which Bambu Studio's profile models as one extruder that reaches the
-    # whole bed. Its PLA, PETG and TPU presets are named without the nozzle.
+    # whole bed. Its PLA, PETG, PC, PLA-CF, PETG-CF and TPU presets are named without the nozzle.
     "h3c":      Printer("Bambu Lab H3C", "BBL", "Bambu Lab H3C 0.4 nozzle", "0.16mm Standard @BBL H3C",
-                        _bambu(" @BBL H3C", ("PLA", "PETG"), ABS="Generic ABS @BBL H3C 0.4 nozzle"), 9, "bambu"),
+                        {"PLA": "Generic PLA @BBL H3C", "PETG": "Generic PETG @BBL H3C",
+                         "PCTG": "Generic PCTG @BBL H3C 0.4 nozzle", "ABS": "Generic ABS @BBL H3C 0.4 nozzle",
+                         "ASA": "Generic ASA @BBL H3C 0.4 nozzle", "PC": "Generic PC @BBL H3C",
+                         "PA": "Generic PA @BBL H3C 0.4 nozzle", "PLA-CF": "Generic PLA-CF @BBL H3C",
+                         "PETG-CF": "Generic PETG-CF @BBL H3C", "PA-CF": "Generic PA-CF @BBL H3C 0.4 nozzle",
+                         "HIPS": "Generic HIPS @BBL H3C 0.4 nozzle", "PVA": "Generic PVA @BBL H3C 0.4 nozzle",
+                         "BVOH": "Generic BVOH @BBL H3C 0.4 nozzle", "TPU": "Generic TPU @BBL H3C",
+                         "TPU-AMS": "Generic TPU for AMS @BBL H3C"}, 9, "bambu"),
 
     # ---- Creality (CFS), from OrcaSlicer. From here on, each printer's TPU is its maker's own soft
     # TPU preset (95A and the like) for it; none has one for Bambu's TPU for AMS, which is refused.
     "k2plus":   Printer("Creality K2 Plus", "Creality", "Creality K2 Plus 0.4 nozzle",
-                        "0.16mm Optimal @Creality K2 Plus 0.4 nozzle", _generic("Creality Generic ", " @K2-all", WITH_TPU)),
+                        "0.16mm Optimal @Creality K2 Plus 0.4 nozzle", {"PLA": "Creality Generic PLA @K2-all",
+                                                                        "PETG": "Creality Generic PETG @K2-all",
+                                                                        "PCTG": "Generic PCTG @K2 Plus-all",
+                                                                        "ABS": "Creality Generic ABS @K2-all",
+                                                                        "ASA": "Creality Generic ASA @K2-all",
+                                                                        "PC": "Generic PC @K2 Plus-all",
+                                                                        "PA": "Generic PA @K2 Plus-all",
+                                                                        "PLA-CF": "Creality Generic PLA-CF @K2-all",
+                                                                        "PETG-CF": "Generic PETG-CF @K2 Plus-all",
+                                                                        "PA-CF": "Creality Generic PA-CF @K2-all",
+                                                                        "HIPS": "Generic HIPS @K2 Plus-all",
+                                                                        "PVA": "Generic PVA @K2 Plus-all",
+                                                                        "BVOH": "Generic BVOH @K2 Plus-all",
+                                                                        "TPU": "Creality Generic TPU @K2-all"}),
     "k2pro":    Printer("Creality K2 Pro", "Creality", "Creality K2 Pro 0.4 nozzle",
-                        "0.16mm Optimal @Creality K2 Pro 0.4 nozzle", _generic("Creality Generic ", " @K2-all", WITH_TPU)),
+                        "0.16mm Optimal @Creality K2 Pro 0.4 nozzle", {"PLA": "Creality Generic PLA @K2-all",
+                                                                       "PETG": "Creality Generic PETG @K2-all",
+                                                                       "ABS": "Creality Generic ABS @K2-all",
+                                                                       "ASA": "Creality Generic ASA @K2-all",
+                                                                       "PC": "Generic PC @K2 Pro-all",
+                                                                       "PA": "Generic PA @K2 Pro-all",
+                                                                       "PLA-CF": "Creality Generic PLA-CF @K2-all",
+                                                                       "PETG-CF": "Generic PETG-CF @K2 Pro-all",
+                                                                       "PA-CF": "Creality Generic PA-CF @K2-all",
+                                                                       "PVA": "Generic PVA @K2 Pro-all",
+                                                                       "BVOH": "Generic BVOH @K2 Pro-all",
+                                                                       "TPU": "Creality Generic TPU @K2-all"}),
     # Not here: the plain Creality K2. OrcaSlicer 2.4.2's own K2 preset cuts filament
     # with a 30 mm long retraction, outside the 10-18 mm its CLI accepts, so the CLI
     # won't load it -- and shortening a cut retraction risks jams in the CFS.
     # The K2 SE and the K1C with CFS-C use the shared K2-all / K1-all filaments Creality makes their defaults.
     "k2se":     Printer("Creality K2 SE", "Creality", "Creality K2 SE 0.4 nozzle",
                         "0.16mm Standard @Creality K2 SE 0.4 nozzle",
-                        {**_generic("Creality Generic ", " @K2-all"), "TPU": "Generic TPU @K2 SE-all"}),
+                        {"PLA": "Creality Generic PLA @K2-all", "PETG": "Creality Generic PETG @K2-all",
+                         "ABS": "Creality Generic ABS @K2-all", "ASA": "Generic ASA @K2 SE-all",
+                         "PLA-CF": "Generic PLA-CF @K2 SE-all", "TPU": "Generic TPU @K2 SE-all"}),
     "hi":       Printer("Creality Hi", "Creality", "Creality Hi 0.4 nozzle", "0.16mm Optimal @Creality Hi",
-                        _generic("Creality Generic ", " @Hi-all", WITH_TPU)),
+                        {"PLA": "Creality Generic PLA @Hi-all", "PETG": "Creality Generic PETG @Hi-all",
+                         "ABS": "Creality Generic ABS @Hi-all", "ASA": "Creality Generic ASA @Hi-all",
+                         "PLA-CF": "Creality Generic PLA-CF @Hi-all", "PVA": "Generic PVA @Hi-all",
+                         "BVOH": "Generic BVOH @Hi-all", "TPU": "Creality Generic TPU @Hi-all"}),
     "k1c":      Printer("Creality K1C CFS", "Creality", "Creality K1C_CFS-C 0.4 nozzle",
                         "0.16mm Optimal @Creality K1C_CFS-C 0.4 nozzle",
-                        {**_generic("Creality Generic ", " @K1-all"), "TPU": "Generic TPU @K1C_CFS-C-all"}),
+                        {"PLA": "Creality Generic PLA @K1-all", "PETG": "Creality Generic PETG @K1-all",
+                         "ABS": "Creality Generic ABS @K1-all", "ASA": "Generic ASA @K1C_CFS-C-all",
+                         "PC": "Generic PC @K1C_CFS-C-all", "PA": "Generic PA @K1C_CFS-C-all",
+                         "PLA-CF": "Generic PLA-CF @K1C_CFS-C-all", "PETG-CF": "Generic PETG-CF @K1C_CFS-C-all",
+                         "PA-CF": "Generic PA-CF @K1C_CFS-C-all", "HIPS": "Generic HIPS @K1C_CFS-C-all",
+                         "PVA": "Generic PVA @K1C_CFS-C-all", "BVOH": "Generic BVOH @K1C_CFS-C-all",
+                         "TPU": "Generic TPU @K1C_CFS-C-all"}),
 
     # ---- Elegoo (CANVAS). OrcaSlicer 2.4.2's profile drives it; 2.3.1's stopped for M600.
     "cc":       Printer("Elegoo Centauri Carbon", "Elegoo", "Elegoo Centauri Carbon 0.4 nozzle",
                         "0.16mm Optimal @Elegoo CC 0.4 nozzle",
                         {"PLA": "Elegoo PLA @ECC", "PETG": "Elegoo PETG @ECC", "ABS": "Generic ABS @Elegoo Centauri",
-                         "TPU": "Elegoo TPU 95A @ECC"}),
+                         "ASA": "Elegoo ASA @ECC", "PC": "Elegoo PC @ECC", "PA": "Generic PA @Elegoo",
+                         "PETG-CF": "Generic PETG-CF @Elegoo Centauri", "TPU": "Elegoo TPU 95A @ECC"}),
 
     # ---- Anycubic (ACE Pro). The Kobra S1 has no 0.16 mm preset; 0.16 mm is carried over anyway.
     # Not Anycubic Generic TPU on the Kobra 3s: at 240 C it's past their PLA's 230, and OrcaSlicer
@@ -345,49 +441,95 @@ PRINTERS = {
     # incompatible"). Their own Kobra 3 TPUs print at 210 and 205.
     "kobras1":  Printer("Anycubic Kobra S1", "Anycubic", "Anycubic Kobra S1 0.4 nozzle",
                         "0.20mm Standard @Anycubic Kobra S1 0.4 nozzle",
-                        _generic("Anycubic ", " @Anycubic Kobra S1 0.4 nozzle", WITH_TPU)),
+                        {"PLA": "Anycubic PLA @Anycubic Kobra S1 0.4 nozzle",
+                         "PETG": "Anycubic PETG @Anycubic Kobra S1 0.4 nozzle",
+                         "ABS": "Anycubic ABS @Anycubic Kobra S1 0.4 nozzle",
+                         "ASA": "Anycubic ASA @Anycubic Kobra S1 0.4 nozzle",
+                         "TPU": "Anycubic TPU @Anycubic Kobra S1 0.4 nozzle"}),
     "kobras1max": Printer("Anycubic Kobra S1 Max", "Anycubic", "Anycubic Kobra S1 Max 0.4 nozzle",
                           "0.16mm Standard @Anycubic Kobra S1 Max 0.4 nozzle",
                           {"PLA": "Anycubic PLA @Anycubic Kobra S1 Max 0.4 nozzle",
                            "PETG": "Generic PETG @Anycubic Kobra S1 Max 0.4 nozzle",
                            "ABS": "Anycubic ABS @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "ASA": "Anycubic ASA @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "PC": "Anycubic PC @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "PA": "Anycubic PA @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "PLA-CF": "Anycubic PLA-CF @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "PETG-CF": "Anycubic PETG-CF @Anycubic Kobra S1 Max 0.4 nozzle",
+                           "PVA": "Anycubic PVA @Anycubic Kobra S1 Max 0.4 nozzle",
                            "TPU": "Anycubic TPU 95A @Anycubic Kobra S1 Max 0.4 nozzle"}),
     "kobra3":   Printer("Anycubic Kobra 3", "Anycubic", "Anycubic Kobra 3 0.4 nozzle",
                         "0.16mm Optimal @Anycubic Kobra 3 0.4 nozzle",
-                        {**_generic("Anycubic Generic ", ""), "TPU": "Generic TPU @Anycubic Kobra 3 0.4 nozzle"}),
+                        {"PLA": "Anycubic Generic PLA", "PETG": "Anycubic Generic PETG",
+                         "ABS": "Anycubic Generic ABS", "ASA": "Anycubic Generic ASA",
+                         "TPU": "Generic TPU @Anycubic Kobra 3 0.4 nozzle"}),
     "kobra3max": Printer("Anycubic Kobra 3 Max", "Anycubic", "Anycubic Kobra 3 Max 0.4 nozzle",
                          "0.16mm Standard @Anycubic Kobra 3 Max 0.4 nozzle",
-                         {**_generic("Anycubic Generic ", ""), "TPU": "Anycubic TPU @Anycubic Kobra 3 Max 0.4 nozzle"}),
+                         {"PLA": "Anycubic Generic PLA", "PETG": "Anycubic Generic PETG",
+                          "ABS": "Anycubic Generic ABS", "ASA": "Anycubic Generic ASA",
+                          "TPU": "Anycubic TPU @Anycubic Kobra 3 Max 0.4 nozzle"}),
+    # Not ABS, ASA or PVA on the Kobra X: Anycubic's presets for it print all three at 205 C, its PLA's
+    # temperature, below their own recommended 230-280 (220-240 for PVA) -- in OrcaSlicer 2.4.2.
     "kobrax":   Printer("Anycubic Kobra X", "Anycubic", "Anycubic Kobra X 0.4 nozzle",
                         "0.16mm Standard @Anycubic Kobra X",
                         {"PLA": "Anycubic PLA @Anycubic Kobra X 0.4 nozzle",
                          "PETG": "Generic PETG @Anycubic Kobra X 0.4 nozzle",
-                         "ABS": "Anycubic ABS @Anycubic Kobra X 0.4 nozzle",
                          "TPU": "Anycubic TPU 95A @Anycubic Kobra X 0.4 nozzle"}),
 
     # ---- Flashforge: the AD5X (IFS), and the Creator 5 and 5 Pro, 4-toolhead toolchangers. The
     # Creator 5's TPU presets in OrcaSlicer 2.4.2 are typed TPU-95A, TPU-90A and TPU-64D, not TPU:
-    # none stands for a Bambu TPU here yet, so a TPU is refused for them.
+    # none stands for a Bambu TPU here yet, so a TPU is refused for them. Nor PETG-CF: their
+    # PETG-CF prints at 250 C, past its own recommended 235-240.
     "ad5x":     Printer("Flashforge AD5X", "Flashforge", "Flashforge AD5X 0.4 nozzle", "0.16mm Standard @FF AD5X",
-                        {**_generic("Flashforge Generic ", ""), "TPU": "Flashforge TPU 95A @FF AD5X"}),
+                        {"PLA": "Flashforge Generic PLA", "PETG": "Flashforge Generic PETG",
+                         "ABS": "Flashforge Generic ABS", "ASA": "Flashforge Generic ASA",
+                         "PLA-CF": "Flashforge PLA-CF", "PETG-CF": "Flashforge PETG-CF",
+                         "PA-CF": "Flashforge PA12-CF", "TPU": "Flashforge TPU 95A @FF AD5X"}),
     "creator5": Printer("Flashforge Creator 5", "Flashforge", "Flashforge Creator 5 0.4 nozzle",
                         "0.20mm Standard @FF C5",
                         {"PLA": "Generic PLA @FF C5", "PETG": "Flashforge PETG Pro @FF C5",
-                         "ABS": "Flashforge ABS Basic @FF C5"}),
+                         "ABS": "Flashforge ABS Basic @FF C5", "ASA": "Flashforge ASA Basic @FF C5",
+                         "PLA-CF": "Flashforge PLA-CF @FF C5", "PA-CF": "Flashforge PA-CF @FF C5",
+                         "HIPS": "Flashforge HIPS @FF C5", "PVA": "Flashforge PVA @FF C5",
+                         "BVOH": "Generic BVOH @FF C5"}),
     "creator5pro": Printer("Flashforge Creator 5 Pro", "Flashforge", "Flashforge Creator 5 Pro 0.4 nozzle",
                            "0.20mm Standard @FF C5",
                            {"PLA": "Generic PLA @FF C5P", "PETG": "Flashforge PETG Pro @FF C5P",
-                            "ABS": "Flashforge ABS Basic @FF C5P"}),
+                            "ABS": "Flashforge ABS Basic @FF C5P", "ASA": "Flashforge ASA Basic @FF C5P",
+                            "PLA-CF": "Flashforge PLA-CF @FF C5P", "PA-CF": "Flashforge PA-CF @FF C5P",
+                            "HIPS": "Flashforge HIPS @FF C5P", "PVA": "Flashforge PVA @FF C5P",
+                            "BVOH": "Generic BVOH @FF C5P"}),
 
     # ---- QIDI (QIDI Box). Sold as the Plus4 and Max4; OrcaSlicer still calls them X-Plus 4 / X-Max 4.
     "q2":       Printer("QIDI Q2", "Qidi", "Qidi Q2 0.4 nozzle", "0.16mm Optimal @Qidi Q2",
-                        {**_generic("Generic ", " @Qidi Q2 0.4 nozzle"), "TPU": "Generic TPU 95A @Qidi Q2 0.4 nozzle"}),
+                        {"PLA": "Generic PLA @Qidi Q2 0.4 nozzle", "PETG": "Generic PETG @Qidi Q2 0.4 nozzle",
+                         "ABS": "Generic ABS @Qidi Q2 0.4 nozzle", "ASA": "QIDI ASA @Qidi Q2 0.4 nozzle",
+                         "PC": "Generic PC @Qidi Q2 0.4 nozzle", "PA": "Qidi Generic PA",
+                         "PLA-CF": "QIDI PLA-CF @Qidi Q2 0.4 nozzle", "PETG-CF": "QIDI PETG-CF @Qidi Q2 0.4 nozzle",
+                         "PA-CF": "Qidi Generic PA-CF", "PVA": "Qidi Generic PVA",
+                         "TPU": "Generic TPU 95A @Qidi Q2 0.4 nozzle"}),
     "q2c":      Printer("QIDI Q2C", "Qidi", "Qidi Q2C 0.4 nozzle", "0.16mm Optimal @Qidi Q2C",
-                        {**_generic("Generic ", " @Qidi Q2C 0.4 nozzle"), "TPU": "Generic TPU 95A @Qidi Q2C 0.4 nozzle"}),
+                        {"PLA": "Generic PLA @Qidi Q2C 0.4 nozzle", "PETG": "Generic PETG @Qidi Q2C 0.4 nozzle",
+                         "ABS": "Generic ABS @Qidi Q2C 0.4 nozzle", "ASA": "QIDI ASA @Qidi Q2C 0.4 nozzle",
+                         "PC": "Generic PC @Qidi Q2C 0.4 nozzle", "PLA-CF": "QIDI PLA-CF @Qidi Q2C 0.4 nozzle",
+                         "PETG-CF": "QIDI PETG-CF @Qidi Q2C 0.4 nozzle",
+                         "TPU": "Generic TPU 95A @Qidi Q2C 0.4 nozzle"}),
     "plus4":    Printer("QIDI Plus4", "Qidi", "Qidi X-Plus 4 0.4 nozzle", "0.16mm Optimal @Qidi XPlus4",
-                        _generic("Qidi Generic ", " @Qidi X-Plus 4 0.4 nozzle", WITH_TPU)),
+                        {"PLA": "Qidi Generic PLA @Qidi X-Plus 4 0.4 nozzle",
+                         "PETG": "Qidi Generic PETG @Qidi X-Plus 4 0.4 nozzle",
+                         "ABS": "Qidi Generic ABS @Qidi X-Plus 4 0.4 nozzle",
+                         "ASA": "Qidi Generic ASA @Qidi X-Plus 4 0.4 nozzle",
+                         "PC": "Qidi Generic PC @Qidi X-Plus 4 0.4 nozzle", "PA": "Qidi Generic PA",
+                         "PLA-CF": "Qidi Generic PLA-CF", "PETG-CF": "Qidi Generic PETG-CF",
+                         "PA-CF": "Qidi Generic PA-CF", "PVA": "Qidi Generic PVA",
+                         "TPU": "Qidi Generic TPU @Qidi X-Plus 4 0.4 nozzle"}),
     "max4":     Printer("QIDI Max4", "Qidi", "Qidi X-Max 4 0.4 nozzle", "0.16mm Standard @X-Max 4",
-                        {**_generic("Generic ", " @Qidi X-Max 4 0.4 nozzle"),
+                        {"PLA": "Generic PLA @Qidi X-Max 4 0.4 nozzle",
+                         "PETG": "Generic PETG @Qidi X-Max 4 0.4 nozzle",
+                         "ABS": "Generic ABS @Qidi X-Max 4 0.4 nozzle", "ASA": "QIDI ASA @Qidi X-Max 4 0.4 nozzle",
+                         "PC": "Generic PC @Qidi X-Max 4 0.4 nozzle",
+                         "PLA-CF": "QIDI PLA-CF @Qidi X-Max 4 0.4 nozzle",
+                         "PETG-CF": "QIDI PETG-CF @Qidi X-Max 4 0.4 nozzle",
                          "TPU": "Generic TPU 95A @Qidi X-Max 4 0.4 nozzle"}),
 
     # ---- WonderMaker: the ZR Ultra S, a 4-toolhead toolchanger.
@@ -395,6 +537,7 @@ PRINTERS = {
                         "0.16mm Optimal @WonderMaker ZR Ultra",
                         {"PLA": "WonderMaker PLA Basic", "PETG": "WonderMaker PETG Basic",
                          "ABS": "WonderMaker ABS @WonderMaker ZR Ultra S",
+                         "ASA": "WonderMaker ASA @WonderMaker ZR Ultra S", "PVA": "WonderMaker PVA",
                          "TPU": "WonderMaker TPU 95A"}),
 }
 
@@ -521,12 +664,20 @@ def select(spec: list[str] | None, default: str = "popular") -> list[str]:
     return keys
 
 
-# Bambu filament_type -> the type a printer's preset stands for. Anything else is
-# refused: a silk, matte or galaxy PLA is still "PLA" in Bambu's filament_type.
+# The filament types SlicerBridge converts: each one Bambu Studio's filament_type names, and
+# each a printer's own preset of that same type stands for (PRINTERS). A type is never
+# printed as another. The fibre-filled ones (PLA-CF, PETG-CF, PA-CF) are their own types: they
+# need a hardened nozzle, and their presets print slower.
+MAIN_TYPES = ("PLA", "PETG", "PCTG", "ABS", "ASA", "PC", "PA", "PLA-CF", "PETG-CF", "PA-CF",
+              "HIPS", "PVA", "BVOH", "TPU", "TPU-AMS")
+
+# Source filament_type -> the type a printer's preset stands for. Anything else is
+# refused: a silk, matte or galaxy PLA is still "PLA" in Bambu's filament_type, and
+# Snapmaker Orca's PETG-HF is PETG.
 # Bambu has two TPUs, kept apart: "TPU" is soft (95A and softer, Generic TPU's
 # 3.2 mm^3/s), which an AMS can't feed; "TPU-AMS", Bambu's TPU for AMS, is about
 # 68D, feeds through the AMS and prints at 10.5 to 18. A TPU never becomes the other.
-BAMBU_TYPES = {"PLA": "PLA", "PETG": "PETG", "PETG-HF": "PETG", "ABS": "ABS", "TPU": "TPU", "TPU-AMS": "TPU-AMS"}
+BAMBU_TYPES = {**{t: t for t in MAIN_TYPES}, "PETG-HF": "PETG"}
 
 
 def name_suffix(text: str) -> str:

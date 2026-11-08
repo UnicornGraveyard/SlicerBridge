@@ -17,10 +17,11 @@ conversion logic in `slicerbridge/engines/u1.py`, from https://github.com/josuan
 
 ## Snapmaker Orca's U1 filament presets (values)
 
-`slicerbridge/data/u1/filaments.json`: the values one U1 extruder gets from five of Snapmaker Orca 2.4.1's
-bundled U1 filament presets (Generic PETG, Generic ABS, Generic TPU, Snapmaker PETG HF, Snapmaker TPU 95A HF
-@U1 0.4 nozzle), each flattened through its inherits chain by `scripts/u1_filaments.py`, so a U1 file is made
-without Snapmaker Orca installed. Snapmaker Orca is a fork of OrcaSlicer, AGPL v3.
+`slicerbridge/data/u1/filaments.json`: the values one U1 extruder gets from fourteen of Snapmaker Orca 2.4.1's
+bundled U1 filament presets (its Generic ABS, ASA, BVOH, PA, PA-CF, PC, PCTG, PETG, PETG-CF, PLA-CF, PVA and
+TPU, Snapmaker PETG HF, and Snapmaker TPU 95A HF @U1 0.4 nozzle), each flattened through its inherits chain by
+`scripts/u1_filaments.py`, so a U1 file is made without Snapmaker Orca installed. Snapmaker Orca is a fork of
+OrcaSlicer, AGPL v3.
 
 ## Slicer profiles (not distributed)
 

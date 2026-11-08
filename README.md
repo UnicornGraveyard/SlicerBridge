@@ -98,13 +98,22 @@ colors, and save the project.
 and QIDI printers are written by OrcaSlicer and also checked in each maker's own slicer: see
 [docs/brand-slicers.md](docs/brand-slicers.md) for what those slicers read differently, and how the files handle it.
 
-Each filament gets the printer's own preset for its type: PLA, PETG, ABS and TPU. Bambu's two TPUs stay apart.
-Plain TPU (soft, 95A and the like) gets each Bambu printer's Generic TPU, and the output says to load it by hand on
-the external spool, since an AMS can't feed it; on the H2D, H2D Pro, H2C and X2D it goes on the one nozzle its
-preset allows. Bambu's TPU for AMS gets Generic TPU for AMS. Every OrcaSlicer-family printer gets its maker's own
-TPU preset, except the Flashforge Creator 5 and 5 Pro, whose TPU presets OrcaSlicer types otherwise, so TPU is
-refused there; none of them takes TPU for AMS. The U1 prints TPU on Generic TPU, and TPU for AMS on Snapmaker's
-TPU 95A HF, each with its own temperatures and speeds. The Prusa printers take PLA only.
+Each filament gets the printer's own preset for its type, never another type's: PLA, PETG, PCTG, ABS, ASA, PC,
+nylon (PA), the carbon-fibre PLA-CF, PETG-CF and PA-CF, HIPS, PVA, BVOH and TPU, wherever the printer's slicer has
+a preset for it. Every Bambu printer has them all but the A1 mini, which has no ABS, ASA, PC or nylon; the U1 has
+them all but HIPS. A type a printer has no preset for is refused, with which filament and why. The Prusa printers
+take PLA only.
+
+Bambu's two TPUs stay apart. Plain TPU (soft, 95A and the like) gets each Bambu printer's Generic TPU, and the
+output says to load it by hand on the external spool, since an AMS can't feed it; on the H2D, H2D Pro, H2C and X2D
+it goes on the one nozzle its preset allows. Bambu's TPU for AMS gets Generic TPU for AMS. Every OrcaSlicer-family
+printer gets its maker's own TPU preset, except the Flashforge Creator 5 and 5 Pro, whose TPU presets OrcaSlicer
+types otherwise; none of them takes TPU for AMS. The U1 prints TPU on Generic TPU, and TPU for AMS on Snapmaker's
+TPU 95A HF.
+
+Some slicers won't print two filaments together until a preference allows it, and the output says which:
+OrcaSlicer, a PLA and PETG model on a printer whose colors share one nozzle (a K2 Plus, say); Snapmaker Orca, PLA
+with ABS, ASA, PC or nylon on the U1.
 
 Missing your printer? [Ask for it](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=printer_request.yml),
 or [add it](docs/adding-a-printer.md).
@@ -140,7 +149,7 @@ slicerbridge convert "Dragon - Creality K2 Plus.3mf" --printers bambu   # retarg
 slicerbridge convert model.3mf --printers all --slice --name "My Model" --prefix "My Shop - "
 slicerbridge convert model.3mf --name "My Model" --suffix "My Shop"   # My Model - Prusa XL - My Shop.3mf
 slicerbridge convert model.3mf --printers creality,qidi,u1
-slicerbridge printers                                # every printer, its key, engine and slicer
+slicerbridge printers                                # every printer: its key, engine, slicer, filament types
 slicerbridge verify "out/My Model" --source model.3mf --slice
 slicerbridge brand-check "out/My Model"              # slice each file in its maker's own slicer
 ```

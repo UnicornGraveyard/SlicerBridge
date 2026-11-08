@@ -65,14 +65,25 @@ TARGET_FILAMENTS = 4
 DEFAULT_PROFILE = "Snapmaker PLA SnapSpeed @U1"
 # Source filament_type -> the U1 preset an extruder printing it gets, with that preset's
 # own values (FILAMENTS): the template's are PLA's, and a TPU left on them printed at
-# 220 C and 15 mm^3/s, where Snapmaker's TPU 95A HF says 230 and 9 (2026-11-07). Plain
-# TPU gets Generic TPU, 240 C and 3.2 mm^3/s like Bambu's own Generic TPU; Bambu's
+# 220 C and 15 mm^3/s, where Snapmaker's TPU 95A HF says 230 and 9 (2026-11-07). Each
+# type gets Snapmaker Orca's Generic preset for it, as Bambu printers get Bambu Studio's.
+# Plain TPU gets Generic TPU, 240 C and 3.2 mm^3/s like Bambu's own Generic TPU; Bambu's
 # TPU for AMS (about 68D), which the U1 has no preset for, Snapmaker's TPU 95A HF, at
-# 230 C like it. PLA keeps the template's; another type prints as PLA, and says so.
+# 230 C like it. PLA keeps the template's. Any other type is refused: Snapmaker Orca
+# 2.4.1 has no HIPS for the U1, and a type printed as another prints at its temperature.
 U1_PRESETS = {
     "PETG": "Generic PETG",
     "PETG-HF": "Snapmaker PETG HF",
+    "PCTG": "Generic PCTG",
     "ABS": "Generic ABS",
+    "ASA": "Generic ASA @U1 0.4 nozzle",
+    "PC": "Generic PC",
+    "PA": "Generic PA",
+    "PLA-CF": "Generic PLA-CF",
+    "PETG-CF": "Generic PETG-CF",
+    "PA-CF": "Generic PA-CF",
+    "PVA": "Generic PVA",
+    "BVOH": "Generic BVOH",
     "TPU": "Generic TPU",
     "TPU-AMS": "Snapmaker TPU 95A HF @U1 0.4 nozzle",
 }
@@ -191,7 +202,7 @@ def slot_filament(f: dict, slot: int, src_cfg: dict, pla: str, bundled: dict) ->
     A slot on a preset in FILAMENTS gets its values there: an older SlicerBridge U1 file's
     TPU kept the template's PLA ones. A U1 project's own slot keeps its preset and values,
     whatever its type. Otherwise the type's U1_PRESETS preset; PLA keeps the template's
-    values under `pla`; any other type prints as PLA, and the note says so.
+    values under `pla`; any other type is refused (U1_PRESETS).
     """
     t = f["type"]
     names = src_cfg.get("filament_settings_id")
@@ -209,7 +220,22 @@ def slot_filament(f: dict, slot: int, src_cfg: dict, pla: str, bundled: dict) ->
         return bundled["presets"][name]["filament_type"], name, bundled["presets"][name]["values"], note
     if t == "PLA":
         return "PLA", pla, {}, ""
-    return "PLA", pla, {}, f"{t}: the U1 has no preset mapped for it here, so it prints as PLA ({pla})"
+    raise Refusal(f"filament {slot} is {t}, and Snapmaker Orca has no U1 preset for it here (u1.U1_PRESETS): "
+                  f"printed as another type, it would print at that type's temperature. Pick another filament "
+                  f"in the designer's slicer, or leave the U1 out.")
+
+
+def mixed_note(types: list[str]) -> str:
+    """What the output says when Snapmaker Orca won't slice these extruders' types together as it's
+    set up: a high-temperature type with a low one, its four nozzles apart or not
+    (checks/orca.py HIGH_TEMP_TYPES), or "". PETG mixes with either."""
+    high = [f"{n} ({t})" for n, t in enumerate(types, start=1) if t in orca_check.HIGH_TEMP_TYPES]
+    low = [f"{n} ({t})" for n, t in enumerate(types, start=1) if t in orca_check.LOW_TEMP_TYPES]
+    if not high or not low:
+        return ""
+    return (f"extruder{'s' * (len(high) > 1)} {', '.join(high)} {'print' if len(high) > 1 else 'prints'} hot and "
+            f"{', '.join(low)} cool: Snapmaker Orca won't slice them together until Preferences > Allow high/low "
+            f"temperature filament mixing is on")
 
 
 def template_path(has_support: bool) -> Path:
@@ -655,7 +681,11 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     pmap = {p["type"]: p["settings_id"] for p in profiles}
     pla = pmap.get("PLA") or (profiles[0]["settings_id"] if profiles else DEFAULT_PROFILE)
     bundled = u1_filaments()
-    extruders = [slot_filament(f, s, orig, pla, bundled) for s, f in zip(used, ordered)]
+    try:
+        extruders = [slot_filament(f, s, orig, pla, bundled) for s, f in zip(used, ordered)]
+    except Refusal as e:
+        withdraw(out_path, "it no longer passes")
+        raise Refusal(f"REFUSING {slug} for the {U1_LABEL}: {e}") from None
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = partial(out_path)
 
@@ -825,6 +855,9 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     for i, (_t, _p, _v, note) in enumerate(extruders, start=1):
         if note:
             print(f"       extruder {i} is {note}")
+    mixed = mixed_note([t for t, _p, _v, _n in extruders])
+    if mixed and not any(w.startswith("Snapmaker Orca won't slice these filaments") for w in slice_warnings):
+        print(f"       ⚠ {mixed}")
     if kept:
         print("       kept the U1's own " + "; ".join(f"{tall.describe({k: u1[k]})} ({why})" for k, why in kept.items()))
     for w in slice_warnings:

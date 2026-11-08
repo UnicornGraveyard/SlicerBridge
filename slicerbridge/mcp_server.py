@@ -85,7 +85,8 @@ def _path(p: str) -> str:
 
 
 @mcp.tool(description="Every printer SlicerBridge writes for: its key, name, engine, slicer, the colors it "
-                      "holds, and the sets it's in.", annotations=READS)
+                      "holds, the filament types it takes (any other is refused), and the sets it's in.",
+          annotations=READS)
 def list_printers(printers: PRINTERS = "all") -> str:
     return _run("printers", "--printers", printers)
 
