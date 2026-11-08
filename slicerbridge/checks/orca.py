@@ -774,6 +774,8 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
 
 AXIS = re.compile(r"\b([XYE])(-?[\d.]+)")
 TOOL = re.compile(r"^T(\d+)\b")
+# A new layer: OrcaSlicer and its forks write ;LAYER_CHANGE, Bambu Studio ; CHANGE_LAYER.
+LAYER = (";LAYER_CHANGE", "; CHANGE_LAYER")
 # What the slicer estimates, in its own words: OrcaSlicer and its forks ("; estimated printing
 # time (normal mode) = 5h 3m", "; total filament used [g] = 412.3"), Bambu Studio ("; total
 # estimated time: 5h 3m", "; total filament weight [g] : 412.3").
@@ -791,6 +793,8 @@ def gcode_facts(path: Path) -> dict:
     Klipper EXCLUDE_OBJECT_START ends the tower block too).
     """
     tools, manual = Counter(), Counter()
+    layers: dict[int, set] = {}  # tool -> the layers it lays model on (1 is the first)
+    layer, tool = 0, 0
     tower = [math.inf, math.inf, -math.inf, -math.inf]
     in_tower, relative, x, y, e = False, False, 0.0, 0.0, 0.0
     laid_mm = tower_mm = 0.0
@@ -802,6 +806,9 @@ def gcode_facts(path: Path) -> dict:
                 time = found.group(1).strip() if found else time
                 found = GRAMS.match(line)
                 grams = float(found.group(1)) if found else grams
+            if line.startswith(LAYER):
+                layer += 1
+                continue
             if line.startswith(";TYPE:") or line.startswith("; FEATURE:"):  # OrcaSlicer, Bambu Studio
                 in_tower = line.split(":", 1)[1].strip().lower() in ("prime tower", "wipe tower")
                 continue
@@ -819,6 +826,8 @@ def gcode_facts(path: Path) -> dict:
                     mm = axes["E"] if relative else axes["E"] - e
                     laid_mm += mm
                     tower_mm += mm if in_tower else 0.0
+                    if not in_tower and layer:
+                        layers.setdefault(tool, set()).add(layer)
                 if "E" in axes and not relative:
                     e = axes["E"]
                 if laid and in_tower:
@@ -833,10 +842,31 @@ def gcode_facts(path: Path) -> dict:
                 e = float(dict(AXIS.findall(code)).get("E", e))
             elif TOOL.match(word):
                 tools[int(word[1:])] += 1
+                tool = int(word[1:]) if int(word[1:]) < 200 else tool  # T1000 and up: Bambu's own, not a filament
             elif word in templates_build.MANUAL_CHANGE:
                 manual[word] += 1
     return {"tools": tools, "manual": manual, "tower": tower if tower[0] != math.inf else None,
-            "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams}
+            "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams,
+            "layers": layers}
+
+
+def dropped_tools(facts: dict) -> tuple[list[int], int | None]:
+    """(filaments that print only on the first layer, the one that prints every layer above it), when
+    the slicer stopped changing tools after the first layer, or ([], None).
+
+    Bambu Studio 2.9.1's command line once sliced an X2D file of four parts, one filament each, with a
+    tool change per filament on the first layer and none after: the PLA-CF part's filament printed all
+    four parts from layer 2 up. The same file sliced four times more changed tools 375 or 437 times
+    (2026-11-08). A model whose other colors are only on its first layer reads the same way.
+    """
+    layers = facts.get("layers") or {}
+    model = sorted({n for s in layers.values() for n in s})
+    if len(model) < 3:
+        return [], None
+    first = model[0]
+    stopped = sorted(t + 1 for t, s in layers.items() if s == {first})
+    going = [t + 1 for t, s in layers.items() if any(n > first for n in s)]
+    return (stopped, going[0]) if stopped and len(going) == 1 else ([], None)
 
 
 def retyped(f: Path, dest: Path, types: dict) -> Path:
@@ -1002,9 +1032,10 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
     # to its SLIC3R_VERSION, 01.10.01.50 (src/Snapmaker_Orca.cpp). Any other slicer
     # gets the file as a downloader would, and a refusal is noted.
     newer = slicer in (SLICERS["orca"], SLICERS["snapmaker"])
-    mix, retype = False, {}
+    mix, retype, last = False, {}, {"crowded": False}
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def run_on(crowded: bool) -> tuple[subprocess.CompletedProcess, dict]:
+            last["crowded"] = crowded
             target = Path(tmp) / "scaled.3mf"
             scales = scaled_to_fit(f, target, cfg, crowded)
             path = target if scales else f
@@ -1070,6 +1101,30 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
                 result.warnings.append(f"at full size {slicer.name}'s brim, skirt or prime tower runs past the bed's "
                                        "printable area: scale it down or narrow the brim in the slicer (sliced at "
                                        + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
+        def stalled() -> dict:
+            """{plate: dropped_tools()} for each plate whose slice stopped changing tools after layer 1."""
+            out = {}
+            for box in boxes if k > 1 else []:
+                gcode = Path(tmp) / f"plate_{box[0]}.gcode" if box else None
+                if gcode and gcode.exists() and gcode.stat().st_size:
+                    gone, kept = dropped_tools(gcode_facts(gcode))
+                    if gone:
+                        out[box[0]] = (gone, kept)
+            return out
+        if run.returncode == 0 and (first := stalled()):
+            # A slicer's flake, not the file's, when the next slice changes tools: sliced once more.
+            run, scales = run_on(last["crowded"])
+            log = (run.stdout + run.stderr).splitlines()
+            again = stalled() if run.returncode == 0 else {}
+            for n, (gone, kept) in (again or first).items():
+                name = f"plate {n}" if len(boxes) > 1 else "plate"
+                said = (f"filament{'s' * (len(gone) > 1)} {', '.join(map(str, gone))} only on the first layer "
+                        f"and filament {kept} on every layer above it")
+                result.warnings.append(
+                    f"{name}: {slicer.name} printed {said}, twice: if the model isn't made that way, slice it in "
+                    f"{slicer.name} and look" if n in again else
+                    f"{name}: {slicer.name}'s first slice printed {said}, without a tool change; sliced again, "
+                    f"the second changes tools")
         result.exit, result.scales = run.returncode, scales
         if run.returncode != 0:
             result.refused = refused_settings("\n".join(log))
