@@ -19,11 +19,19 @@ every `paint_color` is re-encoded to match ([Panda2Prusa](https://github.com/liu
 color, say) are renumbered the same way.
 
 More used slots than the printer holds is a refusal, not a merge: which two colors become one is a design
-decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type (PLA,
-PETG, ABS, TPU, and on Bambu Lab printers Bambu's TPU for AMS: `printers.BAMBU_TYPES`); another type, or one the
-printer has no preset for, is refused. The two TPUs stay apart: plain TPU is soft and slow and an AMS can't feed it,
-TPU for AMS is harder and goes through one, and neither becomes the other. The Snapmaker U1's extruders get the
+decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type
+(`printers.MAIN_TYPES`: PLA, PETG, PCTG, ABS, ASA, PC, PA, PLA-CF, PETG-CF, PA-CF, HIPS, PVA, BVOH, TPU, and Bambu's
+TPU for AMS); another type, or one the printer has no preset for, is refused. A type never prints as another, since
+it would print at the other's temperature. The two TPUs stay apart: plain TPU is soft and slow and an AMS can't feed
+it, TPU for AMS is harder and goes through one, and neither becomes the other. The Snapmaker U1's extruders get the
 values of their own U1 preset, from Snapmaker Orca's profiles (`data/u1/filaments.json`), not the template's PLA.
+
+Some slicers won't print two of a model's filaments together until a preference allows it, and the output says
+which. OrcaSlicer holds each filament's temperature to every other's recommended range on a printer whose filaments
+share one nozzle (PLA at 220 C and PETG at 250 on a K2 Plus), until Preferences > Control > Slicing > Remove mixed
+temperature restriction is on. Snapmaker Orca won't mix a high-temperature type (ABS, ASA, PC, PA) with a low one
+(PLA, TPU, PVA) on the U1 until Preferences > Allow high/low temperature filament mixing is on. A toolchanger's
+heads are apart, and Bambu Studio slices them.
 
 ## Templates
 
@@ -33,8 +41,12 @@ key that slicer would save, every default. A file's settings are composed from t
 color, never guessed.
 
 Slicers' command lines don't load presets the way their apps do, so each preset is first flattened along its
-`inherits` chain, and the saved project is compared key by key with the presets (more than 3 differences fails
-the build). The bed type is the one the slicer's app picks for that printer; Bambu printers keep the designer's.
+`inherits` chain, with the template files Bambu Studio 2.9.1's presets `include` (a printer's start and
+filament-change G-code, a two-nozzle printer's filament values per nozzle), and the saved project is compared key
+by key with the presets (more than 3 differences fails that type). A preset printing outside its own recommended
+temperature range isn't used: Anycubic's Kobra X ABS prints at its PLA's 205 C. A type whose template can't be
+made is refused for that printer, and every other type still converts. The bed type is the one the slicer's app
+picks for that printer; Bambu printers keep the designer's.
 
 ## Your settings
 

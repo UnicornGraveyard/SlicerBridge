@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import re
 import sys
 import zipfile
@@ -152,6 +153,16 @@ def cmd_inspect(a: argparse.Namespace) -> int:
     return 0
 
 
+def filament_types(key: str) -> list[str]:
+    """The filament types printer `key` takes: a preset of its own for each, and any other refused."""
+    engine = engine_of(key)
+    if engine == "orca":
+        return list(PRINTERS[key].filaments)
+    if engine == "u1":
+        return ["PLA", *(t for t in _engine("u1").U1_PRESETS if t != "PETG-HF")]  # PETG HF prints as PETG
+    return sorted(_engine("prusa").FILAMENT_TYPES)
+
+
 def cmd_printers(a: argparse.Namespace) -> int:
     keys = select(a.printers, default="all")
     for k in keys:
@@ -161,6 +172,7 @@ def cmd_printers(a: argparse.Namespace) -> int:
         print(f"  {k:11} {label_of(k):26} {engine:6} {slicer:13} up to {tools_of(k):>2} colors"
               + (f"   brand slicer: {brand.name}" if brand else "")
               + (f"   [{', '.join(sets)}]" if sets else ""))
+        print(f"  {'':11} filaments: {', '.join(filament_types(k))}")
     print(f"\n{len(keys)} printers. Select with --printers: all, {', '.join(SETS)}, a vendor, or keys.")
     return 0
 
@@ -234,6 +246,10 @@ def cmd_templates(a: argparse.Namespace) -> int:
                     continue
                 problems = templates.build(k)
                 print(f"  {'ok  ' if not problems else 'FAIL'} {label_of(k)}" + "".join(f"\n       !! {p}" for p in problems))
+                if not problems:
+                    meta = json.loads((templates.TEMPLATES / k / "meta.json").read_text(encoding="utf-8"))
+                    for t, why in meta.get("missing", {}).items():
+                        print(f"       !  no {t} for it: {why}")
                 failed += bool(problems)
             elif engine == "prusa":
                 prusa = _engine("prusa")
@@ -330,7 +346,7 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--printers", "-p", **which)
     i.set_defaults(run=cmd_inspect)
 
-    p = sub.add_parser("printers", help="every printer, its engine, slicer and colors")
+    p = sub.add_parser("printers", help="every printer, its engine, slicer, colors and filament types")
     p.add_argument("--printers", "-p", **which)
     p.set_defaults(run=cmd_printers)
 

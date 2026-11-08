@@ -56,7 +56,7 @@ claude mcp add slicerbridge -- uvx slicerbridge mcp
 
 | Tool | What it does | Writes files |
 |---|---|---|
-| `list_printers` | Every printer: key, name, engine, slicer, colors, sets | no |
+| `list_printers` | Every printer: key, name, engine, slicer, colors, filament types, sets | no |
 | `inspect_model` | A project's palette, used slots, plates, and fit on each bed | no |
 | `convert_model` | A checked file per printer into `<out_dir>/<name>/` | yes |
 | `verify_files` | Re-run the checks on written files, optionally slicing them | no |

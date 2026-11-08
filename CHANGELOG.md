@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- Bambu Lab files carry each printer's own start, end, filament-change and layer-change G-code again. Bambu
+  Studio 2.9.1 moved them out of its printer presets into template files the preset `include`s, and the template
+  build followed only `inherits`: every Bambu template built with 2.9.1 got the command line's generic fallback
+  (a 577-character start G-code, the same on an A1 and an X1C, where the X1C's own is 20,669), and the
+  two-nozzle printers' filaments lacked their per-nozzle values. Presets are flattened with their includes now,
+  and templates built the old way are rebuilt (`templates.FORMAT`). Bambu files converted with Bambu Studio
+  2.9.1 before this should be converted again. With them, a filament whose preset keeps a setting per nozzle
+  variant (the H2D's Generic TPU) sits beside one that keeps a single value for all its variants (its PLA):
+  that single value now goes on each of its variants, as Bambu Studio lines them up, where PLA and TPU made
+  five entries for seven variants and check 12 refused the file.
+- Every main filament type converts: PCTG, ASA, PC, PA (nylon), PLA-CF, PETG-CF, PA-CF, HIPS, PVA and BVOH, with
+  PLA, PETG, ABS and both TPUs (`printers.MAIN_TYPES`). Each prints on the printer's own preset of that type,
+  wherever its slicer has one: every Bambu printer has them all but the A1 mini, which has no ABS, ASA, PC or
+  nylon. A type a printer has no preset for is refused, with which filament and why; a type never prints as
+  another. Converted and sliced in each printer's own slicer, test models of PLA beside three other types,
+  one part each, covered every type on every printer: 114 models on the 30 Bambu and OrcaSlicer-family printers
+  and the U1, and in the G-code each tool laid its model only in its own part, at its own preset's temperature
+  (2026-11-08). `slicerbridge printers` (and the MCP server's `list_printers`) lists each printer's types.
+- The U1 gets Snapmaker Orca's own U1 preset for each of those types but HIPS, which it has none for, with its
+  values. A type it has no preset for is refused: it had printed as PLA, at PLA's temperature.
+- When a printer's slicer won't print two of a model's filaments together until a preference allows it, the
+  output names the preference. OrcaSlicer holds each filament's temperature to every other's recommended range on
+  a printer whose filaments share one nozzle, so a PLA and PETG model on a K2 Plus or Kobra 3 didn't slice
+  ("Selected nozzle temperatures are incompatible") until Preferences > Control > Slicing > Remove mixed
+  temperature restriction is on. Snapmaker Orca won't mix a high-temperature type (ABS, ASA, PC, PA) with a low
+  one (PLA, TPU, PVA) on the U1. Check 13 slices such a file with the preference on, as its downloader will: with
+  `--allow-mix-temp`, or, for Snapmaker Orca, whose command line has no such switch, on a copy with the
+  high-temperature types named PETG at the file's own temperatures.
+- A preset printing outside its own recommended temperature range isn't used: Anycubic's Kobra X presets print
+  ABS, ASA and PVA at 205 C, their PLA's temperature, so ABS is refused for the Kobra X now (it printed at 205 C).
+  A type whose template can't be built is refused for that printer, and every other type still converts; only
+  PLA failing fails the printer. A slicer command line that hangs or crashes saving a template gets one more
+  try, and a second keeps nothing, so the next run builds it again: four Bambu Studio command lines at once
+  beside its open app now and then never finished.
 - TPU converts. Bambu's two TPUs stay apart: plain TPU (`TPU`, soft) gets every Bambu printer's Generic TPU, and
   Bambu's TPU for AMS (`TPU-AMS`, about 68D) its Generic TPU for AMS; a plain TPU never becomes TPU for AMS. The
   output says to load soft TPU by hand on the external spool, since an AMS can't feed it. On the H2D, H2D Pro,
@@ -15,7 +49,7 @@
   Snapmaker Orca 2.4.1's profiles through each preset's inherits chain (`data/u1/filaments.json`, written by
   `scripts/u1_filaments.py`), not only its name. The other values had stayed the template's PLA: a TPU printed at
   220 C and 15 mm^3/s where Snapmaker's TPU 95A HF says 230 and 9. Plain PETG had printed as PLA. A U1 project's
-  own presets keep their values; a type the U1 has no preset for here still prints as PLA, and now says so.
+  own presets keep their values.
 - A Bambu printer's walls and infill no longer all print in filament 1 when the project came from Snapmaker Orca
   or another OrcaSlicer fork. Their project-wide wall, sparse and solid infill filament default to 1, where each
   part's own filament wins; Bambu Studio 2.9's default is 0, and a 1 puts every part's walls and infill in

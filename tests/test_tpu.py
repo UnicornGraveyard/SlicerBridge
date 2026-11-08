@@ -233,15 +233,6 @@ def test_tpu_for_ams_on_the_u1_says_what_it_prints_on(tmp_path, capsys):
         in capsys.readouterr().out
 
 
-def test_a_type_the_u1_has_no_preset_for_prints_as_pla_and_says_so(tmp_path, capsys):
-    src = _project(tmp_path, ["PLA", "ASA"])
-    f = _u1(tmp_path, src)
-    assert _settings(f)["filament_type"][1] == "PLA"
-    assert "extruder 2 is ASA: the U1 has no preset mapped for it here, so it prints as PLA" in capsys.readouterr().out
-    info, problems = u1check.audit(f, src)
-    assert problems == [] and any("prints the source's ASA as PLA" in line for line in info)
-
-
 def _u1_source(tmp_path, preset: str, temp: str):
     """A U1 project, its extruder 2 on `preset` at `temp`."""
     t = u1.load_template(False)

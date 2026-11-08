@@ -382,10 +382,10 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
     return info, problems, warnings, boxes
 
 
-# Check 3b: the source types the u1 engine gives a U1 preset of their own kind, and the
-# kind each prints as there (Snapmaker's PETG HF is typed PETG, its TPUs TPU). Written out
-# here, not imported from the engine. A U1 project's slots keep their own types.
-U1_PRINTS = {"PLA", "PETG", "PETG-HF", "ABS", "TPU", "TPU-AMS"}
+# Check 3b: the kind a source type prints as on the U1, where it isn't its own name
+# (Snapmaker's PETG HF is typed PETG, its TPUs TPU). Written out here, not imported from
+# the engine. Every other type prints as itself or not at all: the u1 engine refuses a type
+# it has no U1 preset for, where SlicerBridge 0.4 and older printed it as PLA.
 U1_KIND = {"PETG-HF": "PETG", "TPU-AMS": "TPU"}
 
 
@@ -545,16 +545,13 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
     if [rgba(c) for c in pal[: len(want)]] != want:
         problems.append(f"palette differs from the source's used slots: want {want}, file has {pal[:len(want)]}")
 
-    # 3b. extruder k prints the k-th used slot's kind of filament: a TPU stays a TPU
+    # 3b. extruder k prints the k-th used slot's kind of filament: a TPU stays a TPU, an ASA an ASA
     got_types = cfg.get("filament_type") or []
     for n, s in enumerate(used, start=1):
         src_type = sf["types"][s - 1] if s <= len(sf["types"]) else "PLA"
         got = got_types[n - 1] if n <= len(got_types) else None
-        if src_type in U1_PRINTS or sf["u1"]:
-            if got != U1_KIND.get(src_type, src_type):
-                problems.append(f"extruder {n} is {got}, its source slot {s} {src_type}")
-        elif got == "PLA":
-            info.append(f"⚠ extruder {n} prints the source's {src_type} as PLA: the U1 has no preset for it here")
+        if got != (src_type if sf["u1"] else U1_KIND.get(src_type, src_type)):
+            problems.append(f"extruder {n} is {got}, its source slot {s} {src_type}")
 
     # 6b. part/object extruders are the source's, mapped
     out_exts = Counter(int(e) for e in EXTRUDER.findall(ms) if e != "0")

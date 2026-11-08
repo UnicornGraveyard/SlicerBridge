@@ -9,7 +9,7 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
 1. Not a white blob: the palette isn't all white.
 2. Printer: the printer and print presets are that printer's.
 3. Colors: one filament per used slot, no more than the printer holds, each the printer's preset for its type,
-   and of the source slot's type (a TPU stays a TPU, and plain TPU never becomes TPU for AMS).
+   and of the source slot's type (an ASA stays an ASA, and plain TPU never becomes TPU for AMS).
 4. Paint present, or parts and objects in at least two filaments: a TPU band as its own part has no paint.
 5. Palette: filament k is the color of the k-th used source slot.
 6. Every paint state and extruder number is a filament the file has, and the part/object extruders are the
@@ -32,8 +32,12 @@ With `--slice` (or `slicerbridge verify --slice`):
 13. The printer's slicer slices every plate; every color change is a tool change the printer makes itself (no
     `PAUSE`, no `M600`); the prime tower it actually printed stays clear of the model. A plate bigger than the
     bed is sliced as a scaled copy, the way a downloader would print it. A slice still running after 20 minutes
-    is a failure, and a slicer crash gets one more try. The result says the slicer's time and grams, and what
-    share of the filament laid goes into the prime tower.
+    is a failure, and a slicer crash gets one more try. Filaments the slicer won't print together until a
+    preference allows it (their temperatures too far apart) get a warning naming the preference, and are sliced
+    the way the downloader will, with it on: `--allow-mix-temp` for OrcaSlicer and Bambu Studio, and for Snapmaker
+    Orca, whose command line has no such switch, a copy with the high-temperature types named PETG, at the file's
+    own temperatures. The result says the slicer's time and grams, and what share of the filament laid goes into
+    the prime tower.
 
 And whatever the source:
 
@@ -48,8 +52,9 @@ And whatever the source:
 
 1. Not a white blob (unsliced Bambu projects tricked earlier converters into 4 white filaments).
 2. The printer is the U1. 3. At most 4 filaments. 4. Paint present, or parts in at least two filaments.
-3b. Each extruder prints its source slot's kind of filament: a TPU stays a TPU (TPU for AMS prints as one),
-    PETG and PETG HF are PETG. A type the U1 has no preset for here prints as PLA, with a warning.
+3b. Each extruder prints its source slot's kind of filament: an ASA stays an ASA, a TPU a TPU (TPU for AMS
+    prints as one), PETG and PETG HF are PETG. The engine refuses a type the U1 has no preset for (HIPS), so a
+    file from 0.4.3 or older that printed one as PLA fails here.
 5-8. Palette, extruder numbers, painted faces and paint leaves per filament, as above.
 9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base (its brim and the
    reach of its rib wall) may touch the model gets a warning.

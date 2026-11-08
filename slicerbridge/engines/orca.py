@@ -610,6 +610,49 @@ def tpu_notes(ordered: list[dict], key: str) -> list[str]:
     return [f"{which}: soft TPU may not feed through the {feeder}. Check that it takes it, or load it by hand"]
 
 
+def lined_up(cols: list[list], variants: list[int]) -> list:
+    """One setting's column for the whole project, from each filament's template value.
+
+    Bambu Studio 2.9.1 saves a setting per nozzle variant for a filament whose preset includes a
+    value per variant (the H2D's Generic TPU: four toolchange retractions), and one for a filament
+    whose preset gives one (its PLA, with three variants): one value standing for all its variants.
+    In one project they line up with filament_self_index, so where any filament's are per variant,
+    a single one goes on each of its filament's variants. Left as it was, PLA and TPU made five
+    entries for seven variants, and check 12 refused the file (2026-11-08).
+    """
+    if any(len(v) == n > 1 for v, n in zip(cols, variants)):
+        cols = [v * n if len(v) == 1 and n > 1 else v for v, n in zip(cols, variants)]
+    return [x for v in cols for x in v]
+
+
+def mixed_note(ordered: list[dict], tsettings: dict, key: str) -> str:
+    """What the output says when OrcaSlicer won't slice these filaments together as it's set up.
+
+    On a printer whose filaments share one nozzle, OrcaSlicer 2.4.2 holds each filament's
+    temperature to every other's recommended range (Print::validate): a K2 Plus with PLA at 220
+    and PETG at 250, whose PLA recommends 190-230, won't slice until its preference allows it.
+    A toolchanger's heads are apart, and Bambu Studio slices them (2026-11-08). "" when it's fine.
+    """
+    p = PRINTERS[key]
+    base = tsettings["PLA"]
+    if p.slicer != "orca" or str(base.get("single_extruder_multi_material", "1")) != "1":
+        return ""
+
+    def first(t, k):
+        v = tsettings[t].get(k)
+        return float((v[0] if isinstance(v, list) else v) or 0)
+    types = [BAMBU_TYPES[f["type"]] for f in ordered]
+    for i, a in enumerate(types, start=1):
+        for j, b in enumerate(types, start=1):
+            if a != b and not first(b, "nozzle_temperature_range_low") <= first(a, "nozzle_temperature") <= \
+                    first(b, "nozzle_temperature_range_high"):
+                return (f"filament {i} ({a}) prints at {first(a, 'nozzle_temperature'):g} C, outside the "
+                        f"{first(b, 'nozzle_temperature_range_low'):g}-{first(b, 'nozzle_temperature_range_high'):g} C "
+                        f"filament {j} ({b}) recommends, and they share one nozzle: OrcaSlicer won't slice them "
+                        f"together until Preferences > Control > Slicing > Remove mixed temperature restriction is on")
+    return ""
+
+
 def orca_colour(c: str) -> str:
     """#RRGGBB, as OrcaSlicer writes it; an alpha other than FF is kept."""
     c = c.strip().upper()
@@ -747,10 +790,12 @@ def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[
     # One column per filament, each from the template its slicer wrote for its
     # type: one value, or on Bambu Studio's dual-nozzle printers one per nozzle
     # variant -- the entries filament_self_index ties to their filament.
+    # Each type's nozzle variants (filament_self_index): a setting kept per variant has that many entries.
+    variants = {t: len(tsettings[t].get("filament_self_index") or []) for t in set(types)}
     for k in meta["filament_keys"]:
         if k not in base:
             continue
-        col = []
+        cols = []
         for t in types:
             v = tsettings[t].get(k)
             if v is None and set(base[k]) == {"nil"}:
@@ -759,8 +804,8 @@ def compose(key: str, meta: dict, tsettings: dict, src_cfg: dict, ordered: list[
                 v = list(base[k])
             if not isinstance(v, list) or not v:
                 raise Refusal(f"the {key} template for {t} has {v!r} for {k}, not a list -- run slicerbridge templates --refresh")
-            col.extend(v)
-        s[k] = col
+            cols.append(v)
+        s[k] = lined_up(cols, [variants[t] for t in types])
     # A Bambu H2D/H2C project names the hotends on each extruder ("Standard#6": a rack of
     # six); Bambu Studio fills it in from the connected printer, and won't slice without
     # it ("No valid nozzle found"). The stock H2D has one per extruder, the least an
@@ -991,6 +1036,10 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
     if lacking:
         raise Refusal(f"REFUSING {m.slug} for the {printer.label}: {lacking}")
     meta, tsettings = templates_build.load(key)
+    unbuilt = {t: why for t, why in meta.get("missing", {}).items() if t in {BAMBU_TYPES[f["type"]] for f in m.ordered}}
+    if unbuilt:
+        raise Refusal(f"REFUSING {m.slug} for the {printer.label}: " + "; ".join(
+            f"its slicer has no {t} template here ({why})" for t, why in unbuilt.items()))
     base = tsettings["PLA"]
     bed = Bed.of(base)
     with zipfile.ZipFile(TEMPLATES / key / "PLA.3mf") as z:
@@ -1116,6 +1165,9 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         print(f"       prime tower brim {tower_brim:g} mm (the printer's is auto) to fit the space left")
     for line in tpu_notes(m.ordered, key):
         print(f"       {line}")
+    mixed = mixed_note(m.ordered, tsettings, key)
+    if mixed and not any(w.startswith("OrcaSlicer won't slice these filaments") for w in map(str, warnings)):
+        print(f"       ⚠ {mixed}")
     worked_around = [k for k, v in SLICER_WORKAROUNDS.items() if base.get(k) not in (None, v)]
     if worked_around:
         print(f"       {', '.join(worked_around)} off: {SLICERS[printer.slicer].name} hangs on it")

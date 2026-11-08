@@ -41,7 +41,8 @@ Run them before a pull request that changes an engine, a check or the printer ta
 - **Linux.** The slicer paths and profile folders are the missing pieces ([docs/install.md](docs/install.md#linux)).
 - **Windows.** Trying the brand slicers and the OrcaSlicer and PrusaSlicer installers there, and saying where they installed
   ([docs/install.md](docs/install.md#windows)).
-- **Other filament types** than PLA, PETG and ABS (Prusa printers take PLA only so far).
+- **Filament types** on the Prusa printers, which take PLA only so far, and types beyond `printers.MAIN_TYPES`
+  (PET-CF, PA6-CF, ABS-GF and the like), which are refused until a printer's preset stands for each.
 
 ## Pull requests
 
