@@ -28,8 +28,8 @@ from pathlib import Path
 
 from . import __version__
 from .errors import Refusal
-from .printers import (BRAND_SLICERS, PRINTERS, SETS, SLICERS, cache_dir, not_found, engine_of, file_safe, info, label_of,
-                       name_suffix, printer_of, select, split_name, tools_of, vendor_of)
+from .printers import (BRAND_SLICERS, PRINTERS, PRUSA_PRINTERS, SETS, SLICERS, cache_dir, not_found, engine_of, file_safe,
+                       info, label_of, name_suffix, printer_of, select, split_name, tools_of, vendor_of)
 
 def _engine(name: str):
     """Import an engine only when it's used: they pull in Panda2Prusa and lxml."""
@@ -160,7 +160,7 @@ def filament_types(key: str) -> list[str]:
         return list(PRINTERS[key].filaments)
     if engine == "u1":
         return ["PLA", *(t for t in _engine("u1").U1_PRESETS if t != "PETG-HF")]  # PETG HF prints as PETG
-    return sorted(_engine("prusa").FILAMENT_TYPES)
+    return list(PRUSA_PRINTERS[key].filaments)
 
 
 def cmd_printers(a: argparse.Namespace) -> int:
@@ -253,11 +253,11 @@ def cmd_templates(a: argparse.Namespace) -> int:
                 failed += bool(problems)
             elif engine == "prusa":
                 prusa = _engine("prusa")
-                if not a.refresh and (prusa.PROFILES / f"{k}.ini").exists():
+                if not a.refresh and prusa.profiles_built(k):
                     print(f"  have {label_of(k)}")
                     continue
                 try:
-                    prusa.refresh_profile(k)
+                    prusa.refresh_profile(k)  # it says which types it couldn't build
                 except Refusal as e:
                     print(f"  FAIL {label_of(k)}\n       !! {e}")
                     failed += 1

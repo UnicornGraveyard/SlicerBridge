@@ -27,9 +27,13 @@
 
 ## Prusa printers
 
-Add a `PrusaPrinter` to `PRUSA_PRINTERS` with the PrusaSlicer printer, print and filament presets, and its
-`printer_model` id and nozzle variant from PrusaSlicer's `PrusaResearch.ini`. Then
-`slicerbridge templates --printers <key>` builds its profile.
+Add a `PrusaPrinter` to `PRUSA_PRINTERS` with the PrusaSlicer printer and print presets, its `printer_model` id
+and nozzle variant, and a filament preset for each type of `printers.MAIN_TYPES` it has one for, PLA first:
+Prusa's own (Prusament, Prusa ABS), or else Generic, from PrusaSlicer's `PrusaResearch.ini`.
+`prusa-slicer --datadir <cache>/prusaslicer --printer-profile <preset> --query-print-filament-profiles` lists
+the filament presets PrusaSlicer takes for it. Then `slicerbridge templates --printers <key>` builds a profile per
+type, and says which it couldn't: one PrusaSlicer won't load for that printer, or whose preset is typed otherwise
+(`engines.prusa.PRUSA_KINDS`).
 
 ## A new engine
 

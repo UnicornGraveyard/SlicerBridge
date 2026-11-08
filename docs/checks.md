@@ -87,9 +87,13 @@ Each per-plate PrusaSlicer project is checked for:
 6. Modifier and negative parts kept, as PrusaSlicer's volume types.
 7. The config's filament colors are the mapped palette.
 8. On the bed, clear of its edges.
-9. PrusaSlicer loads it (`--info`).
+9. PrusaSlicer loads it (`--info`), and reads each used tool's filament (preset, type, temperatures) as the file
+   has it.
 10. With `--slice`, PrusaSlicer slices it.
 11. Size unchanged.
+12. Each used tool's filament is its type's preset for the printer, typed as that type (`filament_type`, and
+    `filament_abrasive` for a carbon-fibre one): a type never prints as another. A temperature other than its
+    preset's in the cached profile is a warning: a file converted with an older Prusa bundle.
 
 A plate taller than 100 mm on a printer with a wipe tower (the MMU3, the XL) gets a 10 mm tower brim and 150%
 purge spacing where every plate's tower finds a spot for the wider brim, and a warning where it doesn't.
@@ -99,9 +103,9 @@ PrusaSlicer's tower has no ribs or speed of its own.
 comment after the `SlicerBridge` stamp, what only the conversion knew: the source plate, the slot-to-tool mapping
 (`--map` can change it), and whether the model fit the bed and was turned. PrusaSlicer never reads a zip comment.
 With `--source`, all of them run; without it, the ones that need only the file: 1, 2, 3 (the tool range), 7 (the
-config PrusaSlicer reads, its tool count and printer), 8, and 9 and 10 as above. A file written before 0.4.3
-doesn't record its mapping: it's checked with the mapping a conversion without `--map` would use, with a
-warning, or with `verify --map` for one converted with a map.
+config PrusaSlicer reads, its tool count and printer), 8, 9 and 10 as above, and 12 with each tool's type the one
+its preset stands for. A file written before 0.4.3 doesn't record its mapping: it's checked with the mapping a
+conversion without `--map` would use, with a warning, or with `verify --map` for one converted with a map.
 
 ## What the checks share with the engines
 

@@ -20,6 +20,25 @@
   one part each, covered every type on every printer: 114 models on the 30 Bambu and OrcaSlicer-family printers
   and the U1, and in the G-code each tool laid its model only in its own part, at its own preset's temperature
   (2026-11-08). `slicerbridge printers` (and the MCP server's `list_printers`) lists each printer's types.
+- The Prusa printers respect each filament's type too, where they took PLA only (any other type was refused).
+  Each tool gets PrusaSlicer's preset for its own type: Prusa's own (Prusament, Prusa ABS) where the printer has
+  one, else Generic. The XL takes PLA, PETG, ABS, ASA, PC, PETG-CF, PA-CF, HIPS and TPU; the Core One INDX PLA,
+  PETG, ABS, ASA, PC, PETG-CF, PVA and TPU; the MMU3 PLA, PETG, ABS, ASA and PC (`printers.PRUSA_PRINTERS`). A
+  type a printer has no preset for is refused, with which filament and why: PrusaSlicer has no Prusa or Generic
+  PCTG, nylon (PA), PLA-CF or BVOH preset for any of them (filament makers' own, on some), none for Bambu's TPU
+  for AMS, and no flex at all for the MMU3. PrusaSlicer saves a profile per printer and type, each checked to be that type
+  (`filament_type`, and `filament_abrasive` for the carbon-fibre ones, which PrusaSlicer types as their base),
+  and a file's tools take their filament settings from their type's profile, entry by entry, as PrusaSlicer
+  itself puts them together for a preset per tool. Profiles built before are rebuilt. Check 12 holds each
+  tool to its type's preset, and check 9 to PrusaSlicer reading each tool's filament as the file has it.
+  PrusaSlicer slices any of them together, without a warning: the output says when the MMU3's filaments print
+  at different temperatures through its one nozzle (PrusaSlicer sets each one's at its change and doesn't wait
+  for it), and when filaments want bed temperatures more than 15 C apart, since PrusaSlicer heats the one bed
+  for the first filament each layer prints. Converted and sliced in PrusaSlicer 2.9.6 (Prusa bundle 2.5.13), 33
+  test models of PLA beside each other type, and beside as many as the tools hold, one 20 mm part each, covered
+  every type on all four printers: in the G-code each tool laid its model only in its own part, all of it at its
+  own preset's temperature, and each file's filament settings were the ones PrusaSlicer saves for those presets,
+  key for key (2026-11-08).
 - The U1 gets Snapmaker Orca's own U1 preset for each of those types but HIPS, which it has none for, with its
   values. A type it has no preset for is refused: it had printed as PLA, at PLA's temperature.
 - When a printer's slicer won't print two of a model's filaments together until a preference allows it, the
