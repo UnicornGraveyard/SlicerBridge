@@ -101,8 +101,10 @@ and QIDI printers are written by OrcaSlicer and also checked in each maker's own
 Each filament gets the printer's own preset for its type, never another type's: PLA, PETG, PCTG, ABS, ASA, PC,
 nylon (PA), the carbon-fibre PLA-CF, PETG-CF and PA-CF, HIPS, PVA, BVOH and TPU, wherever the printer's slicer has
 a preset for it. Every Bambu printer has them all but the A1 mini, which has no ABS, ASA, PC or nylon; the U1 has
-them all but HIPS. A type a printer has no preset for is refused, with which filament and why. The Prusa printers
-take PLA only.
+them all but HIPS. A type a printer has no preset for is refused, with which filament and why. Each Prusa tool gets
+Prusa's own preset for its type (Prusament, Prusa ABS), or else PrusaSlicer's Generic one: the XL takes PLA, PETG,
+ABS, ASA, PC, PETG-CF, PA-CF, HIPS and TPU; the Core One INDX PLA, PETG, ABS, ASA, PC, PETG-CF, PVA and TPU; the
+MMU3 PLA, PETG, ABS, ASA and PC.
 
 Bambu's two TPUs stay apart. Plain TPU (soft, 95A and the like) gets each Bambu printer's Generic TPU, and the
 output says to load it by hand on the external spool, since an AMS can't feed it; on the H2D, H2D Pro, H2C and X2D
@@ -113,7 +115,10 @@ TPU 95A HF.
 
 Some slicers won't print two filaments together until a preference allows it, and the output says which:
 OrcaSlicer, a PLA and PETG model on a printer whose colors share one nozzle (a K2 Plus, say); Snapmaker Orca, PLA
-with ABS, ASA, PC or nylon on the U1.
+with ABS, ASA, PC or nylon on the U1. PrusaSlicer prints any of them together, without a warning; the output says
+when the MMU3's filaments print at different temperatures through its one nozzle (PrusaSlicer sets each one's at
+its change, and doesn't wait for it), and when a Prusa printer's filaments want bed temperatures more than 15 C
+apart (PrusaSlicer heats the one bed for the first filament each layer prints).
 
 Missing your printer? [Ask for it](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=printer_request.yml),
 or [add it](docs/adding-a-printer.md).

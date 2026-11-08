@@ -564,22 +564,45 @@ class PrusaPrinter:
     model: str            # its printer_model id, installed in SlicerBridge's private datadir
     variant: str          # nozzle variant of that model
     print_preset: str     # 0.15 mm: the closest Prusa profile to a Bambu 0.16 mm project
-    filament_preset: str  # loaded on every tool; only PLA is mapped so far
+    filaments: dict = field(default_factory=dict)  # filament type -> PrusaSlicer filament preset, PLA first
 
 
+# Each Prusa printer's filaments: for each of MAIN_TYPES, Prusa's own preset for it (Prusament, or
+# Prusa ABS) where PrusaSlicer's bundle has one compatible with the printer, else its Generic one,
+# as the orca engine never takes a filament maker's own preset either. From PrusaResearch.ini
+# 2.5.13 (2026-11-08). PrusaSlicer types a fibre-filled filament as its base (Prusament PETG Carbon
+# Fiber is PETG) and marks it filament_abrasive: engines.prusa.PRUSA_KINDS. The engine checks each
+# when it builds the profile (PrusaSlicer refuses a preset the printer isn't compatible with); a type
+# missing here is refused for that printer, with which filament and why. None has one for Bambu's TPU
+# for AMS (about 68D): their flex presets are 95A TPUs.
+_INDX = {  # the Core One INDX, 4T and 8T alike
+         "PLA": "Prusament PLA @COREONEINDX HF0.4", "PETG": "Prusament PETG @COREONEINDX HF0.4",
+         "ABS": "Generic ABS @COREONEINDX HF0.4", "ASA": "Prusament ASA @COREONEINDX HF0.4",
+         "PC": "Prusament PC Blend @COREONEINDX HF0.4", "PETG-CF": "Prusament PETG Carbon Fiber @COREONEINDX HF0.4",
+         "PVA": "Generic PVA @COREONEINDX HF0.4", "TPU": "Prusament TPU 95A @COREONEINDX HF0.4"}
 PRUSA_PRINTERS = {
     # The MMU3 needs a host printer. Core One: 270 mm of Z, so tall prints fit;
-    # an MK4S MMU3 stops at 220 mm.
+    # an MK4S MMU3 stops at 220 mm. One nozzle for its five filaments: PrusaSlicer's bundle has
+    # no flex, nylon, HIPS, PVA or carbon-fibre preset of Prusa's or Generic for it, and Generic
+    # ABS leaves it out (Prusa ABS is the one for it).
     "mmu3":  PrusaPrinter(5, "Prusa MMU3", "Prusa CORE One MMU3 0.4 nozzle", "COREONEMMU3", "0.4",
-                          "0.15mm SPEED @COREONE 0.4", "Prusament PLA @COREONE"),
+                          "0.15mm SPEED @COREONE 0.4",
+                          {"PLA": "Prusament PLA @COREONE", "PETG": "Prusament PETG @COREONE",
+                           "ABS": "Prusa ABS @COREONE", "ASA": "Prusament ASA @COREONE",
+                           "PC": "Prusament PC Blend @COREONE"}),
     "xl":    PrusaPrinter(5, "Prusa XL", "Original Prusa XL - 5T Input Shaper 0.4 nozzle", "XL5IS", "0.4",
-                          "0.15mm SPEED @XLIS 0.4", "Prusament PLA @XLIS"),
+                          "0.15mm SPEED @XLIS 0.4",
+                          {"PLA": "Prusament PLA @XLIS", "PETG": "Prusament PETG @XL", "ABS": "Prusa ABS @XL",
+                           "ASA": "Prusament ASA @XL", "PC": "Prusament PC Blend @XL",
+                           "PETG-CF": "Prusament PETG Carbon Fiber @XL", "PA-CF": "Prusament PA11 Carbon Fiber @XL",
+                           "HIPS": "Generic HIPS @XL", "TPU": "Prusament TPU 95A @XL"}),
     # 4T and 8T get their own names: the embedded printer profile differs, so one
-    # file must never silently overwrite the other.
+    # file must never silently overwrite the other. The INDX is new in PrusaSlicer's
+    # downloaded bundle (2.5.x); the one PrusaSlicer 2.9.6 installs (2.4.14) has no INDX.
     "indx4": PrusaPrinter(4, "Prusa Core One INDX 4T", "Prusa CORE One INDX 4T HF0.4 nozzle", "COREONE_INDX4T",
-                          "HF0.4", "0.15mm Detail @COREONEINDX HF0.4", "Prusament PLA @COREONEINDX HF0.4"),
+                          "HF0.4", "0.15mm Detail @COREONEINDX HF0.4", dict(_INDX)),
     "indx8": PrusaPrinter(8, "Prusa Core One INDX 8T", "Prusa CORE One INDX 8T HF0.4 nozzle", "COREONE_INDX8T",
-                          "HF0.4", "0.15mm Detail @COREONEINDX HF0.4", "Prusament PLA @COREONEINDX HF0.4"),
+                          "HF0.4", "0.15mm Detail @COREONEINDX HF0.4", dict(_INDX)),
 }
 
 U1_LABEL = "Snapmaker U1"
