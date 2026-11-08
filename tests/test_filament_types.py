@@ -181,6 +181,59 @@ def test_snapmaker_orca_with_no_switch_is_checked_on_a_copy_with_its_hot_filamen
     assert _settings(f)["filament_type"][1] == "ABS"  # the file itself keeps its type
 
 
+# --------------------------------------------- a slice that stops changing tools ----
+
+def _gcode(per_layer):
+    """G-code laying model in each listed tool on each layer, Bambu Studio's way."""
+    lines, e = [], 0.0
+    for layer in per_layer:
+        lines.append("; CHANGE_LAYER")
+        for t in layer:
+            e += 1
+            lines += [f"T{t} H-1", "; FEATURE: Outer wall", f"G1 X{10 * t + 1} Y1 E{e:.1f}"]
+    return "\n".join(["M82", *lines, ""])
+
+
+def test_the_g_code_says_which_layers_each_filament_prints_on(tmp_path):
+    g = tmp_path / "plate_1.gcode"
+    g.write_text(_gcode([[0, 1, 2], [1], [1]]), encoding="utf-8")
+    facts = check.gcode_facts(g)
+    assert facts["layers"] == {0: {1}, 1: {1, 2, 3}, 2: {1}}
+    assert check.dropped_tools(facts) == ([1, 3], 2)
+    g.write_text(_gcode([[0, 1, 2], [0, 1, 2], [1, 2]]), encoding="utf-8")
+    assert check.dropped_tools(check.gcode_facts(g)) == ([], None)
+    g.write_text(_gcode([[0, 1], [1]]), encoding="utf-8")  # two layers: nothing to tell
+    assert check.dropped_tools(check.gcode_facts(g)) == ([], None)
+
+
+@pytest.mark.parametrize("flake", [True, False])
+@pytest.mark.usefixtures("stand_in")
+def test_a_slice_that_stops_changing_tools_after_the_first_layer_is_sliced_again(tmp_path, monkeypatch, flake):
+    """Bambu Studio 2.9.1 sliced an X2D file so once, of five times; a model made so slices so every time."""
+    _made, f = _convert(tmp_path, _project(tmp_path, ["PLA", "TPU", "PLA"]))
+    runs = []
+
+    def run(cmd, timeout, cwd=None):
+        cmd = [str(c) for c in cmd]
+        runs.append(cmd)
+        out = Path(cmd[cmd.index("--outputdir") + 1])
+        stalled = len(runs) == 1 or not flake
+        layers = [[0, 1, 2]] + ([[1]] * 4 if stalled else [[0, 1, 2]] * 4)
+        (out / "plate_1.gcode").write_text(_gcode(layers), encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setitem(printers.SLICERS, "orca", replace(printers.SLICERS["orca"], app=tmp_path / "orca"))
+    monkeypatch.setattr(check, "run_slicer", run)
+    result = check.slice_check(f, KEY)
+    _info, problems, warnings = result.text()
+    assert len(runs) == 2 and problems == []
+    said = "printed filaments 1, 3 only on the first layer and filament 2 on every layer above it"
+    if flake:
+        assert f"plate: OrcaSlicer's first slice {said}, without a tool change; sliced again" in warnings[0]
+    else:
+        assert f"plate: OrcaSlicer {said}, twice: if the model isn't made that way" in warnings[0]
+
+
 # ------------------------------------------------------------- orca engine ----
 
 def _convert(tmp_path, src, key=KEY):

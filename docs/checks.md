@@ -36,8 +36,12 @@ With `--slice` (or `slicerbridge verify --slice`):
     preference allows it (their temperatures too far apart) get a warning naming the preference, and are sliced
     the way the downloader will, with it on: `--allow-mix-temp` for OrcaSlicer and Bambu Studio, and for Snapmaker
     Orca, whose command line has no such switch, a copy with the high-temperature types named PETG, at the file's
-    own temperatures. The result says the slicer's time and grams, and what share of the filament laid goes into
-    the prime tower.
+    own temperatures. A slice whose filaments all print on the first layer, and only one of them on every layer
+    above it, without a tool change, is sliced once more: Bambu Studio 2.9.1's command line once sliced an X2D
+    file so, and changed tools hundreds of times on the same file the next four times. If the second slice
+    changes tools, it's the one checked, with a warning; if it does the same, a warning to look in the slicer,
+    since a model whose other colors are only on its first layer reads the same way. The result says the
+    slicer's time and grams, and what share of the filament laid goes into the prime tower.
 
 And whatever the source:
 

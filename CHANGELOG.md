@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Check 13 slices once more a plate whose slice prints its filaments on the first layer and only one of them on
+  every layer above it, without a tool change. Bambu Studio 2.9.1's command line once sliced a four-filament
+  X2D file so, printing all four parts in one filament from layer 2 up, and changed tools 375 or 437 times on the
+  same file the next four times; check 13 had asked only that two tools be used. A second slice that changes
+  tools is the one checked, with a warning; the same again is a warning to look in the slicer, since a model
+  whose other colors are only on its first layer reads the same way.
 - Bambu Lab files carry each printer's own start, end, filament-change and layer-change G-code again. Bambu
   Studio 2.9.1 moved them out of its printer presets into template files the preset `include`s, and the template
   build followed only `inherits`: every Bambu template built with 2.9.1 got the command line's generic fallback
