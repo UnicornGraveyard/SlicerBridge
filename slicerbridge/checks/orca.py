@@ -67,16 +67,33 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import templates as templates_build
-from ..printers import BAMBU_TYPES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, refused_settings, run_slicer
+from ..printers import (BAMBU_TYPES, CRASHES, PRINTERS, SLICERS, TEMPLATES, U1_LABEL, Slicer, refused_settings,
+                        run_slicer)
 from . import u1
 
 
 EPS = 1e-4
 SLICE_LIMIT = 1200  # seconds; a 2-plate, 4-color model slices in 1-2 minutes per printer
-# SIGABRT and SIGSEGV, as subprocess or as the shell reports them, and on Windows an
-# access violation, a heap corruption and a failed stack check (0xC0000005, 0xC0000374, 0xC0000409).
-CRASHES = {-6, -11, 134, 139, 0xC0000005, 0xC0000374, 0xC0000409}
 VERSION_REFUSED = 232  # CLI_FILE_VERSION_NOT_SUPPORTED (-24) as an exit status
+# What a slicer says when it won't print two filaments together for their temperatures, and the
+# preference that lets it: OrcaSlicer 2.4.2 holds each filament's temperature to the others'
+# recommended ranges on a printer whose filaments share one nozzle; Snapmaker Orca 2.4.1, like
+# Bambu Studio's rule, won't mix a high-temperature type (ABS, ASA, PC, PA) with a low one (PLA,
+# TPU, PVA). The app's preference is off until the downloader turns it on; its command line's
+# --allow-mix-temp is the same switch.
+MIXED_TEMPERATURES = ("Selected nozzle temperatures are incompatible", "large difference of temperature")
+MIXED_PREFERENCE = {"OrcaSlicer": "Preferences > Control > Slicing > Remove mixed temperature restriction",
+                    "Snapmaker Orca": "Preferences > Allow high/low temperature filament mixing"}
+# The slicers whose command line takes --allow-mix-temp. Snapmaker Orca 2.4.1's calls it an invalid
+# option, and reads its preference (allow_filament_temp_mixing) neither from the project nor from
+# a --datadir's Snapmaker_Orca.conf: it's checked on a copy whose high-temperature filaments are
+# typed PETG, which its rule mixes with either. Their temperatures are the file's own.
+MIX_SWITCH = {"OrcaSlicer", "Bambu Studio"}
+# Snapmaker Orca 2.4.1's two lists (resources/info/filament_info.json): it won't slice one of the
+# first with one of the second. PETG and HIPS mix with either; a type in neither isn't held.
+HIGH_TEMP_TYPES = {"ABS", "ASA", "PC", "PA", "PA-CF", "PA-GF", "PA6-CF", "PET-CF", "PPS", "PPS-CF", "PPA-CF",
+                   "PPA-GF", "ABS-GF", "ASA-Aero"}
+LOW_TEMP_TYPES = {"PLA", "TPU", "PLA-CF", "PLA-AERO", "PVA", "BVOH", "SBS"}
 # CLI_GCODE_PATH_CONFLICTS (-101), as Windows and as a shell report it: the slicer's
 # own word that the tower hit the model, with or without a line in the log saying so.
 CONFLICT_EXITS = {-101, 2**32 - 101, 256 - 101}
@@ -201,14 +218,30 @@ def tower_area(cfg: dict) -> float:
     busiest layer has: IronJaw's K2 Pro tower (purging, 4 colors, 0.16 mm, 270 mm^3
     at most) printed about 45 x 60 mm against 40 x 211 that way. A flush tower counts
     a change for every three filaments, at least one, which puts it at 40 x 70.
+
+    A two-nozzle printer's tower is TWO_NOZZLE_TOWER times that.
     """
     k = len(cfg.get("filament_colour") or []) or 1
     lh = _first(cfg.get("layer_height")) or 0.2
+    nozzles = TWO_NOZZLE_TOWER if len(cfg.get("extruder_printable_area") or []) > 1 else 1.0
     if str(cfg.get("purge_in_prime_tower")) == "1":
         v = max(float(x) for x in cfg.get("flush_volumes_matrix") or ["0"]) * (_first(cfg.get("flush_multiplier")) or 1)
-        return 1.25 * max(1.0, k / 3) * v / lh
+        return nozzles * 1.25 * max(1.0, k / 3) * v / lh
     v = _first(cfg.get("prime_volume")) or 45
-    return 1.25 * k * v / lh
+    return nozzles * 1.25 * k * v / lh
+
+
+# A two-nozzle printer (H2D, H2D Pro, H2C, X2D) builds a bigger tower than one nozzle
+# for the same colors, once the slicer puts them on both nozzles: a layer that uses
+# both primes the tower on each nozzle change too. StoneBrow (4 colors, 0.16 mm,
+# 1,406 mm^2 by tower_area alone), 2026-11-05: the X2D's tower printed 55.2 x 52.4 mm
+# on its own ribs against 45.5 x 43.0, so its 10 mm brim ran 4 mm off the 256 mm bed
+# (Bambu Studio: "G-code outside of the printable area"); the H2D Pro's 72.3 x 69.0
+# on the tall ribs against 62.5 x 60.0; the H2D's 66.8 x 63.7. That's up to 1.6 times
+# the area. The same file's one-nozzle P2S, H2S, X1C and P1S towers came within 2 mm.
+# IronJaw's H2C tower stayed one nozzle's size (45.5 x 40.9) because its colors all
+# went on one nozzle; there this overestimates, which only costs room.
+TWO_NOZZLE_TOWER = 1.6
 
 
 def outline_reach(cfg: dict) -> float:
@@ -501,15 +534,24 @@ def on_plates(z: zipfile.ZipFile, cfg: dict, label: str) -> tuple[list, list, li
     return info, problems, warnings, local
 
 
+# Kept between the tower's brim and the bed's edge: Bambu Studio checks the tower with
+# more conservative parameters than it slices with. The orca engine places it so
+# (TOWER_EDGE); a heavier step tried at that spot keeps it too, or StoneBrow's X2D got
+# a 10 mm brim estimated to reach the front edge exactly (2026-11-05).
+TOWER_EDGE_MIN = 2.0
+
+
 def tower_clear(z: zipfile.ZipFile, number: int, t: tuple, footprint: tuple, area: tuple) -> bool:
-    """Whether tower footprint `t` stays on the bed and off plate `number`'s model.
+    """Whether tower footprint `t` stays on the bed, TOWER_EDGE_MIN from its edge, and off plate `number`'s model.
 
     In the model's bounding box is fine where its outline leaves room.
     """
     on_model = overlaps(t, footprint) and (
         (outline := plate_outline(Path(z.filename), number, (0.0, 0.0), 1.0) if z.filename else None) is None
         or outline_hits(outline, t))
-    return not on_model and area[0] <= t[0] and area[1] <= t[1] and t[2] <= area[2] and t[3] <= area[3]
+    e = TOWER_EDGE_MIN
+    return (not on_model and area[0] + e <= t[0] and area[1] + e <= t[1]
+            and t[2] <= area[2] - e and t[3] <= area[3] - e)
 
 
 def owed_step(z: zipfile.ZipFile, cfg: dict, boxes: list, slicer: str) -> int | None:
@@ -605,9 +647,12 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
     for i, (t, sid) in enumerate(zip(cfg.get("filament_type", []), cfg.get("filament_settings_id", [])), start=1):
         if printer.filaments.get(t) != sid:
             problems.append(f"filament {i} is {t} on preset {sid!r}, not the {printer.label}'s {t} preset")
-    # 4. paint
-    if painted == 0:
-        problems.append("no paint_color data -- no color painting at all")
+    # 4. paint, or parts in their own filaments
+    parts = u1.part_filaments(ms)
+    if painted == 0 and len(parts) < 2:
+        problems.append("no paint_color data, and its parts print in one filament -- no colors at all")
+    elif painted == 0:
+        info.append(f"colors    : by part, no paint (filaments {parts})")
     if getattr(f.stat(), "st_flags", 0) & 0x8000:  # UF_HIDDEN
         problems.append("hidden in Finder (macOS hidden flag) -- chflags nohidden, or re-convert")
     problems += bed_problems
@@ -617,8 +662,12 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
     if file_stamp[0] != tpl_stamp[0]:
         problems.append(f"version stamp {file_stamp[0]!r} isn't OrcaSlicer's {tpl_stamp[0]!r}")
 
-    # 12. settings complete, nothing of Bambu's slice left
-    short = [key_ for key_ in meta["filament_keys"] if key_ in cfg and (not k or len(cfg[key_]) % k)]
+    # 12. settings complete, nothing of Bambu's slice left. A Bambu Studio printer with
+    # nozzle variants keeps an entry per variant a filament's preset has, which
+    # filament_self_index ties to its filament: the H2D's Generic TPU has four, its PLA one.
+    variants = len(cfg.get("filament_self_index") or [])
+    short = [key_ for key_ in meta["filament_keys"] if key_ in cfg
+             and (not k or len(cfg[key_]) % k) and len(cfg[key_]) != variants]
     if "filament_self_index" in cfg and sorted(set(cfg["filament_self_index"]), key=int) != [str(i) for i in range(1, k + 1)]:
         short.append("filament_self_index")
     if short:
@@ -725,6 +774,8 @@ def audit(f: Path, src: Path | None, key: str) -> tuple[list[str], list[str], li
 
 AXIS = re.compile(r"\b([XYE])(-?[\d.]+)")
 TOOL = re.compile(r"^T(\d+)\b")
+# A new layer: OrcaSlicer and its forks write ;LAYER_CHANGE, Bambu Studio ; CHANGE_LAYER.
+LAYER = (";LAYER_CHANGE", "; CHANGE_LAYER")
 # What the slicer estimates, in its own words: OrcaSlicer and its forks ("; estimated printing
 # time (normal mode) = 5h 3m", "; total filament used [g] = 412.3"), Bambu Studio ("; total
 # estimated time: 5h 3m", "; total filament weight [g] : 412.3").
@@ -742,6 +793,8 @@ def gcode_facts(path: Path) -> dict:
     Klipper EXCLUDE_OBJECT_START ends the tower block too).
     """
     tools, manual = Counter(), Counter()
+    layers: dict[int, set] = {}  # tool -> the layers it lays model on (1 is the first)
+    layer, tool = 0, 0
     tower = [math.inf, math.inf, -math.inf, -math.inf]
     in_tower, relative, x, y, e = False, False, 0.0, 0.0, 0.0
     laid_mm = tower_mm = 0.0
@@ -753,6 +806,9 @@ def gcode_facts(path: Path) -> dict:
                 time = found.group(1).strip() if found else time
                 found = GRAMS.match(line)
                 grams = float(found.group(1)) if found else grams
+            if line.startswith(LAYER):
+                layer += 1
+                continue
             if line.startswith(";TYPE:") or line.startswith("; FEATURE:"):  # OrcaSlicer, Bambu Studio
                 in_tower = line.split(":", 1)[1].strip().lower() in ("prime tower", "wipe tower")
                 continue
@@ -770,6 +826,8 @@ def gcode_facts(path: Path) -> dict:
                     mm = axes["E"] if relative else axes["E"] - e
                     laid_mm += mm
                     tower_mm += mm if in_tower else 0.0
+                    if not in_tower and layer:
+                        layers.setdefault(tool, set()).add(layer)
                 if "E" in axes and not relative:
                     e = axes["E"]
                 if laid and in_tower:
@@ -784,10 +842,44 @@ def gcode_facts(path: Path) -> dict:
                 e = float(dict(AXIS.findall(code)).get("E", e))
             elif TOOL.match(word):
                 tools[int(word[1:])] += 1
+                tool = int(word[1:]) if int(word[1:]) < 200 else tool  # T1000 and up: Bambu's own, not a filament
             elif word in templates_build.MANUAL_CHANGE:
                 manual[word] += 1
     return {"tools": tools, "manual": manual, "tower": tower if tower[0] != math.inf else None,
-            "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams}
+            "tower_share": tower_mm / laid_mm if laid_mm else None, "time": time, "grams": grams,
+            "layers": layers}
+
+
+def dropped_tools(facts: dict) -> tuple[list[int], int | None]:
+    """(filaments that print only on the first layer, the one that prints every layer above it), when
+    the slicer stopped changing tools after the first layer, or ([], None).
+
+    Bambu Studio 2.9.1's command line once sliced an X2D file of four parts, one filament each, with a
+    tool change per filament on the first layer and none after: the PLA-CF part's filament printed all
+    four parts from layer 2 up. The same file sliced four times more changed tools 375 or 437 times
+    (2026-11-08). A model whose other colors are only on its first layer reads the same way.
+    """
+    layers = facts.get("layers") or {}
+    model = sorted({n for s in layers.values() for n in s})
+    if len(model) < 3:
+        return [], None
+    first = model[0]
+    stopped = sorted(t + 1 for t, s in layers.items() if s == {first})
+    going = [t + 1 for t, s in layers.items() if any(n > first for n in s)]
+    return (stopped, going[0]) if stopped and len(going) == 1 else ([], None)
+
+
+def retyped(f: Path, dest: Path, types: dict) -> Path:
+    """A copy of f, only for slicing, with each filament type in `types` named as its value."""
+    with zipfile.ZipFile(f) as zin, zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                s = json.loads(data)
+                s["filament_type"] = [types.get(t, t) for t in s.get("filament_type", [])]
+                data = json.dumps(s, indent=4).encode()
+            zout.writestr(item, data)
+    return dest
 
 
 def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict:
@@ -888,6 +980,7 @@ class Slice:
     problems: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     version: str = ""                              # the note that it needed --allow-newer-file
+    mixed: str = ""                                # the note that it needed --allow-mix-temp
     skipped: str = ""                              # why it wasn't sliced at all
     crash_note: str = ""                           # said instead of failing, if its command line crashed
 
@@ -903,7 +996,7 @@ class Slice:
         excused = self.crashed and bool(self.crash_note)
         info = (["sliced    : a copy with " + ", ".join(f"plate {n} at {v * 100:g}%" for n, v in self.scales.items())
                  + ", as a downloader would scale it"] if self.scales else [])
-        warnings = [self.version] if self.version else []
+        warnings = [w for w in (self.version, self.mixed) if w]
         if self.retried is not None and not excused:
             warnings.append(f"{self.slicer} crashed (exit {self.retried}) and was run again")
         warnings += self.warnings
@@ -939,14 +1032,20 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
     # to its SLIC3R_VERSION, 01.10.01.50 (src/Snapmaker_Orca.cpp). Any other slicer
     # gets the file as a downloader would, and a refusal is noted.
     newer = slicer in (SLICERS["orca"], SLICERS["snapmaker"])
+    mix, retype, last = False, {}, {"crowded": False}
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def run_on(crowded: bool) -> tuple[subprocess.CompletedProcess, dict]:
+            last["crowded"] = crowded
             target = Path(tmp) / "scaled.3mf"
             scales = scaled_to_fit(f, target, cfg, crowded)
+            path = target if scales else f
+            if retype:
+                path = retyped(path, Path(tmp) / "retyped.3mf", retype)
             # A slicer can loop forever (OrcaSlicer 2.4.2's seam placer did): a slice that
             # hasn't finished in SLICE_LIMIT seconds is a failure, not a wait.
             cmd = [str(slicer.binary), *slicer.cli, *(["--allow-newer-file"] if newer else []),
-                   "--outputdir", tmp, "--slice", "0", str(target if scales else f)]
+                   *(["--allow-mix-temp"] if mix else []),
+                   "--outputdir", tmp, "--slice", "0", str(path)]
             try:
                 run = run_slicer(cmd, timeout=SLICE_LIMIT)
             except subprocess.TimeoutExpired:
@@ -960,6 +1059,20 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
             result.version = (f"{slicer.name}'s command line won't take the file's version ({file_stamp}) without "
                               f"--allow-newer-file (sliced with it)")
             newer = True
+            run, scales = run_on(False)
+        if run.returncode != 0 and any(m in run.stdout + run.stderr for m in MIXED_TEMPERATURES):
+            # The designer's filaments, which this slicer prints together only once its
+            # preference allows it: the file is right, so it's sliced the way they'd slice it.
+            where = MIXED_PREFERENCE.get(slicer.name, "its preferences")
+            if slicer.name in MIX_SWITCH:
+                mix, how = True, "sliced with it on"
+            else:
+                hot = sorted(set(cfg.get("filament_type") or []) & HIGH_TEMP_TYPES)
+                retype = {t: "PETG" for t in hot}
+                how = (f"its command line has no switch for it: sliced on a copy with {', '.join(hot)} typed PETG, "
+                       f"at the file's own temperatures")
+            result.mixed = (f"{slicer.name} won't slice these filaments together until {where} is on: their "
+                            f"temperatures are too far apart for it ({how})")
             run, scales = run_on(False)
         if run.returncode in CRASHES:
             # Bambu Studio 2.8.2 sometimes aborts after slicing, in GCodeProcessor's
@@ -988,6 +1101,30 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
                 result.warnings.append(f"at full size {slicer.name}'s brim, skirt or prime tower runs past the bed's "
                                        "printable area: scale it down or narrow the brim in the slicer (sliced at "
                                        + ", ".join(f"{v * 100:g}%" for v in scales.values()) + ")")
+        def stalled() -> dict:
+            """{plate: dropped_tools()} for each plate whose slice stopped changing tools after layer 1."""
+            out = {}
+            for box in boxes if k > 1 else []:
+                gcode = Path(tmp) / f"plate_{box[0]}.gcode" if box else None
+                if gcode and gcode.exists() and gcode.stat().st_size:
+                    gone, kept = dropped_tools(gcode_facts(gcode))
+                    if gone:
+                        out[box[0]] = (gone, kept)
+            return out
+        if run.returncode == 0 and (first := stalled()):
+            # A slicer's flake, not the file's, when the next slice changes tools: sliced once more.
+            run, scales = run_on(last["crowded"])
+            log = (run.stdout + run.stderr).splitlines()
+            again = stalled() if run.returncode == 0 else {}
+            for n, (gone, kept) in (again or first).items():
+                name = f"plate {n}" if len(boxes) > 1 else "plate"
+                said = (f"filament{'s' * (len(gone) > 1)} {', '.join(map(str, gone))} only on the first layer "
+                        f"and filament {kept} on every layer above it")
+                result.warnings.append(
+                    f"{name}: {slicer.name} printed {said}, twice: if the model isn't made that way, slice it in "
+                    f"{slicer.name} and look" if n in again else
+                    f"{name}: {slicer.name}'s first slice printed {said}, without a tool change; sliced again, "
+                    f"the second changes tools")
         result.exit, result.scales = run.returncode, scales
         if run.returncode != 0:
             result.refused = refused_settings("\n".join(log))

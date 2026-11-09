@@ -4,7 +4,13 @@
 
 1. Find the printer's presets in its slicer's bundled profiles
    (`OrcaSlicer.app/Contents/Resources/profiles/<Vendor>/machine|process|filament/*.json`): the printer preset,
-   the print preset closest to 0.16 mm layers, and a filament preset per type (PLA, PETG, ABS).
+   the print preset closest to 0.16 mm layers, and a filament preset for each of `printers.MAIN_TYPES` it has one
+   for (PLA first; the maker's Generic one where there is one, as Bambu Lab printers get Bambu Studio's). Each
+   preset's `filament_type` must be that type exactly, it must list the printer, and its temperature must lie in
+   its own recommended range: the template build leaves out one that doesn't. Where a choice exists, pick a TPU
+   whose temperature is inside the PLA's recommended range and the PLA's inside its: OrcaSlicer won't slice two
+   filaments outside each other's on one nozzle ("Selected nozzle temperatures are incompatible"), and PLA with
+   TPU is the mix most models use.
 2. Add an entry to `PRINTERS` in `slicerbridge/printers.py`: label (as it should read in file names), vendor
    folder, those presets, how many colors its filament unit or toolheads hold, and `"bambu"` as the slicer for a
    Bambu Lab printer. Add it to a set if most owners will want it.
@@ -21,9 +27,13 @@
 
 ## Prusa printers
 
-Add a `PrusaPrinter` to `PRUSA_PRINTERS` with the PrusaSlicer printer, print and filament presets, and its
-`printer_model` id and nozzle variant from PrusaSlicer's `PrusaResearch.ini`. Then
-`slicerbridge templates --printers <key>` builds its profile.
+Add a `PrusaPrinter` to `PRUSA_PRINTERS` with the PrusaSlicer printer and print presets, its `printer_model` id
+and nozzle variant, and a filament preset for each type of `printers.MAIN_TYPES` it has one for, PLA first:
+Prusa's own (Prusament, Prusa ABS), or else Generic, from PrusaSlicer's `PrusaResearch.ini`.
+`prusa-slicer --datadir <cache>/prusaslicer --printer-profile <preset> --query-print-filament-profiles` lists
+the filament presets PrusaSlicer takes for it. Then `slicerbridge templates --printers <key>` builds a profile per
+type, and says which it couldn't: one PrusaSlicer won't load for that printer, or whose preset is typed otherwise
+(`engines.prusa.PRUSA_KINDS`).
 
 ## A new engine
 

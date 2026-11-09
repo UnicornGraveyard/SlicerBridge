@@ -8,8 +8,9 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
 
 1. Not a white blob: the palette isn't all white.
 2. Printer: the printer and print presets are that printer's.
-3. Colors: one filament per used slot, no more than the printer holds, each the printer's preset for its type.
-4. Paint present.
+3. Colors: one filament per used slot, no more than the printer holds, each the printer's preset for its type,
+   and of the source slot's type (an ASA stays an ASA, and plain TPU never becomes TPU for AMS).
+4. Paint present, or parts and objects in at least two filaments: a TPU band as its own part has no paint.
 5. Palette: filament k is the color of the k-th used source slot.
 6. Every paint state and extruder number is a filament the file has, and the part/object extruders are the
    source's, mapped.
@@ -20,7 +21,8 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
    the bed's edge gets a warning too.
 10. Version stamp: the slicer's own, from the printer's template.
 11. Size unchanged: each plate measures as in the source, to 0.01 mm.
-12. Settings complete: every per-filament setting has one value per filament, the flush matrix is K x K per
+12. Settings complete: every per-filament setting has one value per filament (or, on a Bambu printer with
+    nozzle variants, one per variant its preset has: the H2D's Generic TPU has four), the flush matrix is K x K per
     nozzle, the bed type is the one the slicer's app picks, and Bambu's slice leftovers are gone. And it reads
     the same in the brands' own slicers ([brand-slicers.md](brand-slicers.md)): line widths in mm, an exclusion
     area both readings agree on, the Kobra X's ACE block guarded.
@@ -30,8 +32,16 @@ With `--slice` (or `slicerbridge verify --slice`):
 13. The printer's slicer slices every plate; every color change is a tool change the printer makes itself (no
     `PAUSE`, no `M600`); the prime tower it actually printed stays clear of the model. A plate bigger than the
     bed is sliced as a scaled copy, the way a downloader would print it. A slice still running after 20 minutes
-    is a failure, and a slicer crash gets one more try. The result says the slicer's time and grams, and what
-    share of the filament laid goes into the prime tower.
+    is a failure, and a slicer crash gets one more try. Filaments the slicer won't print together until a
+    preference allows it (their temperatures too far apart) get a warning naming the preference, and are sliced
+    the way the downloader will, with it on: `--allow-mix-temp` for OrcaSlicer and Bambu Studio, and for Snapmaker
+    Orca, whose command line has no such switch, a copy with the high-temperature types named PETG, at the file's
+    own temperatures. A slice whose filaments all print on the first layer, and only one of them on every layer
+    above it, without a tool change, is sliced once more: Bambu Studio 2.9.1's command line once sliced an X2D
+    file so, and changed tools hundreds of times on the same file the next four times. If the second slice
+    changes tools, it's the one checked, with a warning; if it does the same, a warning to look in the slicer,
+    since a model whose other colors are only on its first layer reads the same way. The result says the
+    slicer's time and grams, and what share of the filament laid goes into the prime tower.
 
 And whatever the source:
 
@@ -45,7 +55,10 @@ And whatever the source:
 ## u1 engine (Snapmaker U1)
 
 1. Not a white blob (unsliced Bambu projects tricked earlier converters into 4 white filaments).
-2. The printer is the U1. 3. At most 4 filaments. 4. Paint present.
+2. The printer is the U1. 3. At most 4 filaments. 4. Paint present, or parts in at least two filaments.
+3b. Each extruder prints its source slot's kind of filament: an ASA stays an ASA, a TPU a TPU (TPU for AMS
+    prints as one), PETG and PETG HF are PETG. The engine refuses a type the U1 has no preset for (HIPS), so a
+    file from 0.4.3 or older that printed one as PLA fails here.
 5-8. Palette, extruder numbers, painted faces and paint leaves per filament, as above.
 9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base (its brim and the
    reach of its rib wall) may touch the model gets a warning.
@@ -78,9 +91,13 @@ Each per-plate PrusaSlicer project is checked for:
 6. Modifier and negative parts kept, as PrusaSlicer's volume types.
 7. The config's filament colors are the mapped palette.
 8. On the bed, clear of its edges.
-9. PrusaSlicer loads it (`--info`).
+9. PrusaSlicer loads it (`--info`), and reads each used tool's filament (preset, type, temperatures) as the file
+   has it.
 10. With `--slice`, PrusaSlicer slices it.
 11. Size unchanged.
+12. Each used tool's filament is its type's preset for the printer, typed as that type (`filament_type`, and
+    `filament_abrasive` for a carbon-fibre one): a type never prints as another. A temperature other than its
+    preset's in the cached profile is a warning: a file converted with an older Prusa bundle.
 
 A plate taller than 100 mm on a printer with a wipe tower (the MMU3, the XL) gets a 10 mm tower brim and 150%
 purge spacing where every plate's tower finds a spot for the wider brim, and a warning where it doesn't.
@@ -90,9 +107,9 @@ PrusaSlicer's tower has no ribs or speed of its own.
 comment after the `SlicerBridge` stamp, what only the conversion knew: the source plate, the slot-to-tool mapping
 (`--map` can change it), and whether the model fit the bed and was turned. PrusaSlicer never reads a zip comment.
 With `--source`, all of them run; without it, the ones that need only the file: 1, 2, 3 (the tool range), 7 (the
-config PrusaSlicer reads, its tool count and printer), 8, and 9 and 10 as above. A file written before 0.4.3
-doesn't record its mapping: it's checked with the mapping a conversion without `--map` would use, with a
-warning, or with `verify --map` for one converted with a map.
+config PrusaSlicer reads, its tool count and printer), 8, 9 and 10 as above, and 12 with each tool's type the one
+its preset stands for. A file written before 0.4.3 doesn't record its mapping: it's checked with the mapping a
+conversion without `--map` would use, with a warning, or with `verify --map` for one converted with a map.
 
 ## What the checks share with the engines
 

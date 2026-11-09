@@ -16,7 +16,13 @@ def test_version(capsys):
 
 def test_printers_lists_every_printer(capsys):
     assert main(["printers"]) == 0
-    assert "34 printers" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "35 printers" in out
+    assert "filaments: PLA, PETG, PCTG, ABS, ASA, PC, PA, PLA-CF, PETG-CF, PA-CF, HIPS, PVA, BVOH, TPU, TPU-AMS" in out
+    assert "filaments: PLA, PETG, PCTG, ABS, ASA, PC, PA, PLA-CF, PETG-CF, PA-CF, PVA, BVOH, TPU, TPU-AMS\n" in out  # U1
+    assert "filaments: PLA, PETG, ABS, ASA, PC\n" in out  # the MMU3
+    assert "filaments: PLA, PETG, ABS, ASA, PC, PETG-CF, PA-CF, HIPS, TPU\n" in out  # the XL
+    assert out.count("filaments: PLA, PETG, ABS, ASA, PC, PETG-CF, PVA, TPU\n") == 2  # the INDX 4T and 8T
 
 
 def test_inspect_reports_used_slots_and_fit(project, capsys):

@@ -3,7 +3,7 @@
 A Rosetta Stone for multicolor 3MF files.
 
 Convert a multicolor 3MF project, saved by Bambu Studio, OrcaSlicer or a printer maker's own fork of either,
-into a ready, checked file for each of 34 multicolor printers: Bambu Lab, Creality, Elegoo, Anycubic,
+into a ready, checked file for each of 35 multicolor printers: Bambu Lab, Creality, Elegoo, Anycubic,
 Flashforge, QIDI, WonderMaker, Prusa and the Snapmaker U1. Each file is named for its printer, keeps the colors where they
 were painted, carries that printer's own settings and your print settings, keeps its size, and gets a
 heavier prime tower when it's tall. A file that fails a check is never written.

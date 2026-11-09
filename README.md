@@ -18,7 +18,7 @@ your project once and writes it out in each printer's dialect without losing its
 and the way you set it up to print.
 
 SlicerBridge takes the project from whichever slicer you made it in (Bambu Studio, OrcaSlicer, or a printer
-maker's own fork of either) and writes one file for each of 34 printers, named for that printer
+maker's own fork of either) and writes one file for each of 35 printers, named for that printer
 (`My Model - Creality K2 Plus.3mf`), so a downloader can open theirs and print. Its files for Bambu Lab,
 OrcaSlicer-family and U1 printers can go back in, for yet another printer. Every file:
 
@@ -68,6 +68,7 @@ colors, and save the project.
 | Bambu Lab H2D Pro | `h2dpro` | 16 | Bambu Studio | — |
 | Bambu Lab H2C | `h2c` | 16 | Bambu Studio | — |
 | Bambu Lab X2D | `x2d` | 16 | Bambu Studio | — |
+| Bambu Lab H3C | `h3c` | 9 | Bambu Studio | — |
 | Creality K2 Plus | `k2plus` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 Pro | `k2pro` | 4 | OrcaSlicer | Creality Print |
 | Creality K2 SE | `k2se` | 4 | OrcaSlicer | Creality Print |
@@ -96,6 +97,29 @@ colors, and save the project.
 "File built for" is the slicer whose settings the file carries. Files for Creality, Elegoo, Anycubic, Flashforge
 and QIDI printers are written by OrcaSlicer and also checked in each maker's own slicer: see
 [docs/brand-slicers.md](docs/brand-slicers.md) for what those slicers read differently, and how the files handle it.
+
+Each filament gets the printer's own preset for its type, never another type's: PLA, PETG, PCTG, ABS, ASA, PC,
+nylon (PA), the carbon-fibre PLA-CF, PETG-CF and PA-CF, HIPS, PVA, BVOH and TPU, wherever the printer's slicer has
+a preset for it. Every Bambu printer has them all but the A1 mini, which has no ABS, ASA, PC or nylon; the U1 has
+them all but HIPS. A type a printer has no preset for is refused, with which filament and why. Each Prusa tool gets
+Prusa's own preset for its type (Prusament, Prusa ABS), or else PrusaSlicer's Generic one: the XL takes PLA, PETG,
+ABS, ASA, PC, PETG-CF, PA-CF, HIPS and TPU; the Core One INDX PLA, PETG, ABS, ASA, PC, PETG-CF, PVA and TPU; the
+MMU3 PLA, PETG, ABS, ASA and PC.
+
+Bambu's two TPUs stay apart. Plain TPU (soft, 95A and the like) gets each Bambu printer's Generic TPU, and the
+output says to load it by hand on the external spool, since an AMS can't feed it; on the H2D, H2D Pro, H2C and X2D
+it goes on the one nozzle its preset allows. Bambu's TPU for AMS gets Generic TPU for AMS. Every OrcaSlicer-family
+printer gets its maker's own TPU preset, except the Flashforge Creator 5 and 5 Pro, whose TPU presets OrcaSlicer
+types otherwise; none of them takes TPU for AMS. The U1 prints TPU on Generic TPU, and TPU for AMS on Snapmaker's
+TPU 95A HF.
+
+Some slicers won't print two filaments together until a preference allows it, and the output says which:
+OrcaSlicer, a PLA and PETG model on a printer whose colors share one nozzle (a K2 Plus, say); Snapmaker Orca, PLA
+with ABS, ASA, PC or nylon on the U1. PrusaSlicer prints any of them together, without a warning; the output says
+when the MMU3's filaments print at different temperatures through its one nozzle (PrusaSlicer sets each one's at
+its change, and doesn't wait for it), and when a Prusa printer's filaments want bed temperatures more than 15 C
+apart (PrusaSlicer heats the one bed for the first filament each layer prints).
+
 Missing your printer? [Ask for it](https://github.com/UnicornGraveyard/SlicerBridge/issues/new?template=printer_request.yml),
 or [add it](docs/adding-a-printer.md).
 
@@ -130,7 +154,7 @@ slicerbridge convert "Dragon - Creality K2 Plus.3mf" --printers bambu   # retarg
 slicerbridge convert model.3mf --printers all --slice --name "My Model" --prefix "My Shop - "
 slicerbridge convert model.3mf --name "My Model" --suffix "My Shop"   # My Model - Prusa XL - My Shop.3mf
 slicerbridge convert model.3mf --printers creality,qidi,u1
-slicerbridge printers                                # every printer, its key, engine and slicer
+slicerbridge printers                                # every printer: its key, engine, slicer, filament types
 slicerbridge verify "out/My Model" --source model.3mf --slice
 slicerbridge brand-check "out/My Model"              # slice each file in its maker's own slicer
 ```

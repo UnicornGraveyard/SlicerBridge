@@ -42,9 +42,83 @@ def test_bambu_converts_and_slices(project, tmp_path, key):
     assert orca.convert(project, "Cube", [key], tmp_path / "out", slice_it=True) == (1, 0)
 
 
+def _tpu_band(tmp_path):
+    """A PLA part and a TPU part beside it, each on its own filament: no paint."""
+    from builders import bambu_project
+    return bambu_project(tmp_path / "band.3mf", palette=("#FFFFFF", "#3FBF6F"), types=["PLA", "TPU"], plates=1,
+                         size=20.0, parts=[(1, {}), (2, {"sparse_infill_density": "100%"})])
+
+
+# Two filaments on the H3C's rack, and plain TPU on the one H2D nozzle its preset allows.
+@pytest.mark.parametrize("key", ["h3c", "h2d", "k2plus"])
+def test_a_tpu_part_converts_and_slices(tmp_path, key):
+    need(printers.PRINTERS[key].slicer)
+    from slicerbridge.engines import orca
+    assert orca.convert(_tpu_band(tmp_path), "Band", [key], tmp_path / "out", slice_it=True) == (1, 0)
+
+
+def test_a_tpu_part_converts_and_slices_on_the_u1(tmp_path):
+    need("snapmaker")
+    from slicerbridge.engines import u1
+    assert u1.convert(_tpu_band(tmp_path), "Band", ["u1"], tmp_path / "out", slice_it=True) == (1, 0)
+
+
+def test_the_u1s_bundled_filament_values_are_snapmaker_orcas_own():
+    """data/u1/filaments.json, as Snapmaker Orca's profiles flatten here: if not, run scripts/u1_filaments.py."""
+    need("snapmaker")
+    from slicerbridge import templates
+    from slicerbridge.engines import u1
+    data = u1.u1_filaments()
+    if templates.app_version(printers.SLICERS["snapmaker"]) != data["snapmaker_orca"]:
+        pytest.skip(f"made from Snapmaker Orca {data['snapmaker_orca']}: run scripts/u1_filaments.py for this one")
+    assert u1.filament_data() == data
+
+
 def test_prusa_printers_in_one_run(project, tmp_path):
     """Placing a plate moves the source's build items: every printer must start from the source."""
     need("prusa")
     from slicerbridge.engines import prusa
     made, failed = prusa.convert(project, "Cube", ["mmu3", "xl"], tmp_path / "out")
     assert (made, failed) == (4, 0)  # 2 plates x 2 printers
+
+
+def _own_composition(prusa, key, types, dest):
+    """What PrusaSlicer saves with each tool's preset given once per tool (--material-profile in tool order)."""
+    import subprocess
+    p = prusa.PRINTERS[key]
+    cmd = [prusa.find_prusaslicer(), "--datadir", str(prusa.ensure_datadir()), "--printer-profile", p.preset,
+           "--print-profile", p.print_preset]
+    for t in types:
+        cmd += ["--material-profile", p.filaments[t]]
+    r = subprocess.run([*cmd, "--save", str(dest)], capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    return prusa.read_profile(dest, key).values
+
+
+# The MMU3's one nozzle, the XL, and the INDX (whose presets need the downloaded Prusa bundle, 2.5.0 or newer).
+@pytest.mark.parametrize("key", ["mmu3", "xl", "indx4"])
+def test_prusa_printers_print_each_type_on_its_own_preset(tmp_path, key):
+    """PLA beside each other type the printer takes, one part each: every tool gets its type's preset, with the
+    settings PrusaSlicer itself gives a tool with that preset, and the file loads and slices."""
+    need("prusa")
+    from builders import bambu_project
+    from slicerbridge.engines import prusa
+    from slicerbridge.errors import Refusal
+    p = prusa.PRINTERS[key]
+    try:
+        prusa.load_profile(key)
+    except Refusal as e:
+        pytest.skip(f"no {key} profile: {e}")
+    others = [t for t in p.filaments if t != "PLA"]
+    room = p.tools - 1
+    for n, i in enumerate(range(0, len(others), room)):
+        types = ["PLA", *others[i:i + room]]
+        name = f"Types{n}"
+        src = bambu_project(tmp_path / f"{name}.3mf", palette=("#FFFFFF", "#3FBF6F", "#DE4343", "#5B6579",
+                                                                "#161616")[:len(types)],
+                            types=types, plates=1, size=20.0, parts=[(k, {}) for k in range(1, len(types) + 1)])
+        assert prusa.convert(src, name, [key], tmp_path / "out", slice_it=True) == (1, 0), types
+        tools = types + ["PLA"] * (p.tools - len(types))
+        own = _own_composition(prusa, key, tools, tmp_path / f"{name}-own.ini")
+        mine = prusa.composed_profile(key, tools).values
+        assert {k for k in set(own) | set(mine) if own.get(k) != mine.get(k)} == set(), types

@@ -19,7 +19,25 @@ every `paint_color` is re-encoded to match ([Panda2Prusa](https://github.com/liu
 color, say) are renumbered the same way.
 
 More used slots than the printer holds is a refusal, not a merge: which two colors become one is a design
-decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type (PLA, PETG, ABS); another type is refused.
+decision, for whoever made the model, in their slicer. Each filament gets the printer's own preset for its type
+(`printers.MAIN_TYPES`: PLA, PETG, PCTG, ABS, ASA, PC, PA, PLA-CF, PETG-CF, PA-CF, HIPS, PVA, BVOH, TPU, and Bambu's
+TPU for AMS); another type, or one the printer has no preset for, is refused. A type never prints as another, since
+it would print at the other's temperature. The two TPUs stay apart: plain TPU is soft and slow and an AMS can't feed
+it, TPU for AMS is harder and goes through one, and neither becomes the other. The Snapmaker U1's extruders get the
+values of their own U1 preset, from Snapmaker Orca's profiles (`data/u1/filaments.json`), not the template's PLA.
+Each Prusa tool gets PrusaSlicer's preset for its type: Prusa's own (Prusament, Prusa ABS), or else Generic.
+
+Some slicers won't print two of a model's filaments together until a preference allows it, and the output says
+which. OrcaSlicer holds each filament's temperature to every other's recommended range on a printer whose filaments
+share one nozzle (PLA at 220 C and PETG at 250 on a K2 Plus), until Preferences > Control > Slicing > Remove mixed
+temperature restriction is on. Snapmaker Orca won't mix a high-temperature type (ABS, ASA, PC, PA) with a low one
+(PLA, TPU, PVA) on the U1 until Preferences > Allow high/low temperature filament mixing is on. A toolchanger's
+heads are apart, and Bambu Studio slices them. PrusaSlicer 2.9.6 slices any of them together, without a warning
+(its `Print::validate` has no check on it). Through the MMU3's one nozzle it sets each filament's temperature at
+its change (`M104`) and goes on without waiting, and the output says so when they differ. Every Prusa printer has
+one bed, which PrusaSlicer heats for the first filament each layer prints (Bed temperature by extruder 0); its app
+warns when two used filaments' bed temperatures are more than 15 C apart, its command line doesn't, and the
+output does. The Core One MMU3's own start G-code keeps the chamber unheated when any of its filaments is PLA.
 
 ## Templates
 
@@ -29,8 +47,20 @@ key that slicer would save, every default. A file's settings are composed from t
 color, never guessed.
 
 Slicers' command lines don't load presets the way their apps do, so each preset is first flattened along its
-`inherits` chain, and the saved project is compared key by key with the presets (more than 3 differences fails
-the build). The bed type is the one the slicer's app picks for that printer; Bambu printers keep the designer's.
+`inherits` chain, with the template files Bambu Studio 2.9.1's presets `include` (a printer's start and
+filament-change G-code, a two-nozzle printer's filament values per nozzle), and the saved project is compared key
+by key with the presets (more than 3 differences fails that type). A preset printing outside its own recommended
+temperature range isn't used: Anycubic's Kobra X ABS prints at its PLA's 205 C. A type whose template can't be
+made is refused for that printer, and every other type still converts. The bed type is the one the slicer's app
+picks for that printer; Bambu printers keep the designer's.
+
+The Prusa printers have profiles in place of templates: PrusaSlicer saves its printer, print and one type's
+filament preset for each type (`--save`), and each is checked to be that type: its `filament_type`, and
+`filament_abrasive` for a carbon-fibre one, which PrusaSlicer types as its base (`engines.prusa.PRUSA_KINDS`). A
+file's tools take their filament settings from their type's profile, entry by entry, as PrusaSlicer itself puts
+them together for a preset per tool (`PresetBundle::full_fff_config()`): a filament setting it holds once, not per
+tool (`filament_vendor`), is the first tool's. Every printer and type has been checked against PrusaSlicer's own
+`--material-profile` given once per tool: the same settings, key for key.
 
 ## Your settings
 
@@ -69,7 +99,7 @@ the bed is centered at full size with a warning and the scale that would fit.
 
 - **orca** (Bambu Lab and OrcaSlicer-family printers): the steps above, written as a Bambu-format project.
 - **prusa**: Panda2Prusa writes a PrusaSlicer project per plate (PrusaSlicer has no plates), with the printer's
-  PrusaSlicer profile and the wipe tower placed beside the model.
+  PrusaSlicer profile, each tool's filament preset its type's, and the wipe tower placed beside the model.
 - **u1**: the Snapmaker U1 project, from [bl2u1](https://github.com/josuanbn/bl2u1)'s U1 templates, stamped
   with the template's own version so Snapmaker Orca opens it without complaint. With `--slice`, Snapmaker Orca
   slices it; when its command line crashes (2.4.0's did, on a file its app and 2.4.1's command line slice),

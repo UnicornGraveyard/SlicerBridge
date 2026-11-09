@@ -15,11 +15,19 @@ types and preset names from bl2u1's `filament_types.3mf`, without the model it c
 conversion logic in `slicerbridge/engines/u1.py`, from https://github.com/josuanbn/bl2u1 at the commit in
 `slicerbridge/data/u1/BL2U1_COMMIT`. GNU GPL v3.
 
+## Snapmaker Orca's U1 filament presets (values)
+
+`slicerbridge/data/u1/filaments.json`: the values one U1 extruder gets from fourteen of Snapmaker Orca 2.4.1's
+bundled U1 filament presets (its Generic ABS, ASA, BVOH, PA, PA-CF, PC, PCTG, PETG, PETG-CF, PLA-CF, PVA and
+TPU, Snapmaker PETG HF, and Snapmaker TPU 95A HF @U1 0.4 nozzle), each flattened through its inherits chain by
+`scripts/u1_filaments.py`, so a U1 file is made without Snapmaker Orca installed. Snapmaker Orca is a fork of
+OrcaSlicer, AGPL v3.
+
 ## Slicer profiles (not distributed)
 
 Printer, process and filament presets are read at run time from the slicers you install: OrcaSlicer (AGPL v3),
-Bambu Studio (AGPL v3), PrusaSlicer (AGPL v3) and the makers' forks. SlicerBridge ships none of them; the
-settings it builds from them stay in your local cache.
+Bambu Studio (AGPL v3), PrusaSlicer (AGPL v3) and the makers' forks. Apart from the U1 filament values above,
+SlicerBridge ships none of them; the settings it builds from them stay in your local cache.
 
 ## Unicorn Graveyard logo
 

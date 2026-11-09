@@ -219,6 +219,15 @@ def histogram(codes: Counter) -> Counter:
     return hist
 
 
+def part_filaments(ms: str) -> list[int]:
+    """The filaments model_settings.config's objects and parts print in, 0 (the default) aside.
+
+    A model can be multicolor without paint: a TPU band as its own part on filament 2,
+    the rest on 1. Each such part counts, so two of them make it multicolor.
+    """
+    return sorted({int(n) for n in EXTRUDER.findall(ms) if n != "0"})
+
+
 def model_settings(z: zipfile.ZipFile) -> str:
     return z.read("Metadata/model_settings.config").decode()
 
@@ -373,20 +382,29 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
     return info, problems, warnings, boxes
 
 
+# Check 3b: the kind a source type prints as on the U1, where it isn't its own name
+# (Snapmaker's PETG HF is typed PETG, its TPUs TPU). Written out here, not imported from
+# the engine. Every other type prints as itself or not at all: the u1 engine refuses a type
+# it has no U1 preset for, where SlicerBridge 0.4 and older printed it as PLA.
+U1_KIND = {"PETG-HF": "PETG", "TPU-AMS": "TPU"}
+
+
 def source_facts(src: Path) -> dict:
     """What the u1 engine should have made of this source."""
     with zipfile.ZipFile(src) as z:
         pal = [rgba(c) for c in palette(z)]
         codes = paint_codes(z)
         ms = model_settings(z)
+        cfg = json.loads(z.read("Metadata/project_settings.config").decode())
     hist = histogram(codes)
     exts = [int(e) for e in EXTRUDER.findall(ms) if e != "0"]
     used = sorted({s for s in hist if s} | set(exts))
     if not used and codes:
         used = [1]  # painted but unassigned: Bambu prints it on filament 1
     mapping = {old: new for new, old in enumerate(used, start=1)}
+    u1 = str(cfg.get("printer_settings_id", "")).startswith("Snapmaker U1") or cfg.get("printer_model") == "Snapmaker U1"
     return {"palette": pal, "codes": codes, "hist": hist, "exts": exts,
-            "used": used, "mapping": mapping}
+            "used": used, "mapping": mapping, "types": list(cfg.get("filament_type") or []), "u1": u1}
 
 
 def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
@@ -425,9 +443,12 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
     if len(pal) > TOOLS:
         problems.append(f"{len(pal)} filaments — the U1 only has {TOOLS} extruders")
 
-    # 4. color painting survived
-    if painted == 0:
-        problems.append("no paint_color data — this model has no color painting at all")
+    # 4. color painting survived, or the colors are the parts' own filaments
+    parts = part_filaments(ms)
+    if painted == 0 and len(parts) < 2:
+        problems.append("no paint_color data, and its parts print in one filament — this model has no colors at all")
+    elif painted == 0:
+        info.append(f"colors    : by part, no paint (extruders {parts})")
 
     # Finder can see it: iCloud's Documents sync flags dot-named temp files as hidden,
     # and earlier dot-named temp files carried that flag onto the finished file.
@@ -523,6 +544,14 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
     want = [sf["palette"][s - 1] for s in used]
     if [rgba(c) for c in pal[: len(want)]] != want:
         problems.append(f"palette differs from the source's used slots: want {want}, file has {pal[:len(want)]}")
+
+    # 3b. extruder k prints the k-th used slot's kind of filament: a TPU stays a TPU, an ASA an ASA
+    got_types = cfg.get("filament_type") or []
+    for n, s in enumerate(used, start=1):
+        src_type = sf["types"][s - 1] if s <= len(sf["types"]) else "PLA"
+        got = got_types[n - 1] if n <= len(got_types) else None
+        if got != (src_type if sf["u1"] else U1_KIND.get(src_type, src_type)):
+            problems.append(f"extruder {n} is {got}, its source slot {s} {src_type}")
 
     # 6b. part/object extruders are the source's, mapped
     out_exts = Counter(int(e) for e in EXTRUDER.findall(ms) if e != "0")

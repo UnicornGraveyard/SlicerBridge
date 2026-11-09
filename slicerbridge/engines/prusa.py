@@ -54,8 +54,8 @@ from .. import tall
 from ..carry import marked_changed, print_keys
 from ..errors import Refusal
 from ..output import land, partial, withdraw
-from ..printers import (PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir, label_of,
-                        name_suffix, out_name, refused_settings, run_slicer)
+from ..printers import (BAMBU_TYPES, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir,
+                        label_of, name_suffix, out_name, refused_settings, run_slicer)
 
 PROFILES = cache_dir() / "prusa-profiles"
 # PrusaSlicer runs against this private settings folder, never your own, so
@@ -66,7 +66,14 @@ USER_DATADIR = {"darwin": Path("~/Library/Application Support/PrusaSlicer"),
                 "win32": Path(os.environ.get("APPDATA", "~")) / "PrusaSlicer"}.get(
     sys.platform, Path("~/.config/PrusaSlicer")).expanduser()
 
-FILAMENT_TYPES = {"PLA"}  # Bambu filament_type values the filament preset stands for
+# Each SlicerBridge filament type (printers.MAIN_TYPES) as PrusaSlicer's presets say it: their
+# filament_type, and whether they're filament_abrasive. PrusaSlicer types a fibre-filled filament
+# as its base, so PLA-CF is an abrasive PLA. Bambu's TPU for AMS (about 68D) has none: PrusaSlicer's
+# flex presets are 95A TPUs, a softer filament.
+PRUSA_KINDS = {"PLA": ("PLA", False), "PETG": ("PETG", False), "PCTG": ("PCTG", False), "ABS": ("ABS", False),
+               "ASA": ("ASA", False), "PC": ("PC", False), "PA": ("PA", False), "PLA-CF": ("PLA", True),
+               "PETG-CF": ("PETG", True), "PA-CF": ("PA", True), "HIPS": ("HIPS", False), "PVA": ("PVA", False),
+               "BVOH": ("BVOH", False), "TPU": ("FLEX", False)}
 
 # Print settings carried over from the Bambu project onto the Prusa print profile
 # (carry.py): every one Panda2Prusa's translator has a PrusaSlicer setting for, and
@@ -392,14 +399,55 @@ def decide_mapping(src: Source, printer: Printer, explicit: Optional[dict]) -> d
     return dict(explicit)
 
 
-def check_filament_types(src: Source, mapping: dict) -> None:
-    odd = [s for s in mapping if (src.types[s - 1] if s <= len(src.types) else "?") not in FILAMENT_TYPES]
-    if odd:
-        raise Refusal(
-            f"REFUSING {src.slug}: slots {odd} are "
-            f"{sorted({src.types[s - 1] for s in odd})}, and only {sorted(FILAMENT_TYPES)} has a\n"
-            f"   Prusa filament preset mapped here (PRINTERS / FILAMENT_TYPES). Add one first."
-        )
+def slot_type(src: Source, slot: int) -> Optional[str]:
+    """The type a source slot prints as (printers.BAMBU_TYPES), or None for one SlicerBridge doesn't convert."""
+    return BAMBU_TYPES.get(src.types[slot - 1] if slot <= len(src.types) else "?")
+
+
+def no_preset(t: str, printer: Printer) -> str:
+    """Why `printer` has no preset for type `t`."""
+    if t == "TPU-AMS":
+        return ("Bambu's TPU for AMS (TPU-AMS, about 68D), and PrusaSlicer has no preset for it here: its flex "
+                "presets are for 95A TPUs, a softer filament")
+    if t == "TPU" and not any(PRUSA_KINDS[k][0] == "FLEX" for k in printer.filaments):
+        return f"TPU, and PrusaSlicer has no flexible filament preset for the {printer.label} at all"
+    return f"{t}, and PrusaSlicer has no Prusament or Generic {t} preset for the {printer.label}"
+
+
+def typed_tools(src: Source, mapping: dict, printer: Printer) -> tuple[list[str], list[str]]:
+    """(the filament type of each of the printer's tools, unused ones PLA; why each filament the printer
+    has no preset for can't be printed). A type never prints as another."""
+    types = ["PLA"] * printer.tools
+    on: dict = {}
+    gaps = []
+    for old, tool in sorted(mapping.items()):
+        t = slot_type(src, old)
+        raw = src.types[old - 1] if old <= len(src.types) else "?"
+        if t is None:
+            gaps.append(f"slot {old} (T{tool}) is {raw}, a type SlicerBridge doesn't convert (printers.BAMBU_TYPES)")
+        elif t not in printer.filaments:
+            gaps.append(f"slot {old} (T{tool}) is {no_preset(t, printer)}")
+        elif on.setdefault(tool, t) != t:
+            gaps.append(f"slots of two types ({on[tool]} and {t}) are mapped to T{tool}")
+        else:
+            types[tool - 1] = t
+    return types, gaps
+
+
+def tool_types(src: Source, mapping: dict, printer: Printer) -> list[str]:
+    """typed_tools()'s types, or a refusal naming each filament the printer has no preset for, and why."""
+    types, gaps = typed_tools(src, mapping, printer)
+    if gaps:
+        raise Refusal(f"REFUSING {src.slug} for the {printer.label}: " + "; ".join(gaps)
+                      + ". Pick another filament in the designer's slicer, or leave this printer out.")
+    return types
+
+
+def file_types(values: dict, printer: Printer) -> list[Optional[str]]:
+    """Each tool's filament type in a written file's config, by its preset (None: not one of the printer's)."""
+    by_preset = {v: k for k, v in printer.filaments.items()}
+    return [by_preset.get(tool_entry(values, "filament_settings_id", n, printer.tools) or "")
+            for n in range(1, printer.tools + 1)]
 
 
 # ------------------------------------------------------------- profiles ----
@@ -455,32 +503,145 @@ def ensure_datadir() -> Path:
     return DATADIR
 
 
-def refresh_profile(key: str) -> Path:
-    ps = find_prusaslicer()
-    if not ps:
-        raise Refusal(f"the {key} profile isn't built yet and PrusaSlicer isn't installed to build it")
+# The profiles: one per printer and filament type, PrusaSlicer's own --save of the printer, print
+# and that type's filament presets, in <cache>/prusa-profiles/<printer>/<TYPE>.ini. 1 was one per
+# printer, PLA's, in <printer>.ini; a change in what's kept or checked bumps it, and they're rebuilt.
+FORMAT = 2
+
+
+def profile_dir(key: str) -> Path:
+    return PROFILES / key
+
+
+def _meta(key: str) -> Optional[dict]:
+    try:
+        return json.loads((profile_dir(key) / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def profiles_built(key: str) -> bool:
+    """Whether printer `key`'s profiles are built, for every type of its table as it stands."""
+    meta = _meta(key)
+    if not meta or meta.get("format") != FORMAT or meta.get("presets") != PRINTERS[key].filaments:
+        return False
+    missing = meta.get("missing", {})
+    return all((profile_dir(key) / f"{t}.ini").exists() for t in PRINTERS[key].filaments if t not in missing)
+
+
+def entries(value: str, sep: str) -> list[str]:
+    """A PrusaSlicer vector value's entries, as written: numbers apart at ",", strings at ";" outside "..."."""
+    if sep == ",":
+        return value.split(",")
+    out, cur, quoted, i = [], [], False, 0
+    while i < len(value):
+        c = value[i]
+        cur.append(c)
+        if quoted and c == "\\" and i + 1 < len(value):
+            cur.append(value[i + 1])
+            i += 1
+        elif c == '"':
+            quoted = not quoted
+        elif c == ";" and not quoted:
+            cur.pop()
+            out.append("".join(cur))
+            cur = []
+        i += 1
+    out.append("".join(cur))
+    return out
+
+
+# PrusaSlicer's record of each preset's condition and parent (PresetBundle::full_fff_config): (entries
+# before the tools', after them). Before, the print preset's; after, the printer's. It saves one only
+# where an entry isn't empty, so a profile without it has them all empty.
+CUMULATIVE = {"compatible_printers_condition_cummulative": (1, 0), "compatible_prints_condition_cummulative": (0, 0),
+              "inherits_cummulative": (1, 1)}
+
+
+def per_tool(key: str, value: str, tools: int) -> Optional[tuple[str, list, str, list]]:
+    """(separator, the entries before the tools', the entry every tool has, the entries after) of a value a
+    profile with one filament preset on every tool holds per tool; None for a value that isn't held per tool."""
+    head, tail = CUMULATIVE.get(key, (0, 0))
+    for sep in (";", ","):
+        e = entries(value, sep)
+        if len(e) == head + tools + tail and len(set(e[head:head + tools])) == 1:
+            return sep, e[:head], e[head], e[head + tools:]
+    return None
+
+
+def kind_of(prof: Profile) -> tuple[str, Optional[bool], str]:
+    """(filament_type, filament_abrasive or None where PrusaSlicer has no such setting, preset) of a
+    profile with one filament preset on every tool."""
+    def one(k):
+        v = prof.values.get(k)
+        got = per_tool(k, v, prof.tools) if v is not None else None
+        return got[2].strip('"') if got else v
+    abrasive = one("filament_abrasive")
+    return one("filament_type"), None if abrasive is None else abrasive == "1", one("filament_settings_id")
+
+
+def build_profile(key: str, ftype: str, ps: str, datadir: Path) -> Path:
+    """Printer `key`'s profile for filament type `ftype`, saved by PrusaSlicer and checked: the printer's
+    preset, its tools, and the type's preset on every tool, of that kind (PRUSA_KINDS). A refusal says why not."""
     p = PRINTERS[key]
-    PROFILES.mkdir(parents=True, exist_ok=True)
-    dest = PROFILES / f"{key}.ini"
-    r = run_slicer(
-        [ps, "--datadir", ensure_datadir(), "--printer-profile", p.preset,
-         "--print-profile", p.print_preset, "--material-profile", p.filament_preset,
-         "--save", dest],
-        timeout=300,
-    )
+    preset = p.filaments[ftype]
+    dest = profile_dir(key) / f"{ftype}.ini"
+    dest.unlink(missing_ok=True)
+    r = run_slicer([ps, "--datadir", datadir, "--printer-profile", p.preset,
+                    "--print-profile", p.print_preset, "--material-profile", preset, "--save", dest], timeout=300)
     if r.returncode or not dest.exists():
-        raise Refusal(f"PrusaSlicer could not build the {key} profile:\n{r.stdout}{r.stderr}")
-    bundle = DATADIR / "vendor" / "PrusaResearch.ini"
-    ver = re.search(r"^config_version = (\S+)", bundle.read_text(encoding="utf-8", errors="replace"), re.M)
-    print(f"  profile {key:6} <- {p.preset} / {p.print_preset} / {p.filament_preset}"
-          f"  (Prusa bundle {ver.group(1) if ver else '?'})")
+        said = (r.stderr.strip() or r.stdout.strip()).splitlines()
+        raise Refusal(f"PrusaSlicer won't load {preset!r} for it: {said[-1] if said else f'exit {r.returncode}'}")
+    try:
+        prof = read_profile(dest, key)
+        want_type, want_abrasive = PRUSA_KINDS[ftype]
+        got_type, got_abrasive, got_preset = kind_of(prof)
+        if got_preset != preset:
+            raise Refusal(f"PrusaSlicer saved {got_preset!r} on its tools, not {preset!r}")
+        if got_type != want_type:
+            raise Refusal(f"{preset!r} is typed {got_type} in this Prusa bundle, not {want_type}")
+        if got_abrasive is None and want_abrasive:
+            raise Refusal("this PrusaSlicer doesn't mark abrasive filaments (filament_abrasive)")
+        if got_abrasive is not None and got_abrasive != want_abrasive:
+            raise Refusal(f"{preset!r} is {'' if got_abrasive else 'not '}marked abrasive, and {ftype} "
+                          f"{'is' if want_abrasive else 'is not'} a fibre-filled filament")
+    except Refusal:
+        dest.unlink(missing_ok=True)
+        raise
     return dest
 
 
-def load_profile(key: str) -> Profile:
-    path = PROFILES / f"{key}.ini"
-    if not path.exists():
-        refresh_profile(key)
+def refresh_profile(key: str) -> dict:
+    """Build printer `key`'s profile for each filament type of its table; returns {type: why} for those
+    that couldn't be, which are refused for it. Only PLA failing fails the printer (a Refusal)."""
+    ps = find_prusaslicer()
+    if not ps:
+        raise Refusal(f"the {key} profiles aren't built yet and PrusaSlicer isn't installed to build them")
+    p = PRINTERS[key]
+    folder = profile_dir(key)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "meta.json").unlink(missing_ok=True)
+    (PROFILES / f"{key}.ini").unlink(missing_ok=True)  # format 1's, PLA only
+    datadir = ensure_datadir()
+    missing = {}
+    for ftype in p.filaments:
+        try:
+            build_profile(key, ftype, ps, datadir)
+        except Refusal as e:
+            if ftype == "PLA":
+                raise Refusal(f"PrusaSlicer could not build the {key} profile: {e}")
+            missing[ftype] = str(e)
+    bundle = datadir / "vendor" / "PrusaResearch.ini"
+    ver = re.search(r"^config_version = (\S+)", bundle.read_text(encoding="utf-8", errors="replace"), re.M)
+    ver = ver.group(1) if ver else "?"
+    (folder / "meta.json").write_text(json.dumps({"format": FORMAT, "bundle": ver, "presets": p.filaments,
+                                                  "missing": missing}, indent=1), encoding="utf-8")
+    print(f"  profiles {key:6} <- {p.preset} / {p.print_preset} / {len(p.filaments) - len(missing)} filament "
+          f"types  (Prusa bundle {ver})" + "".join(f"\n       !  no {t} for it: {why}" for t, why in missing.items()))
+    return missing
+
+
+def read_profile(path: Path, key: str) -> Profile:
     lines = path.read_text(encoding="utf-8").splitlines()
     header = lines[0].lstrip("#").strip()
     items = []
@@ -496,6 +657,114 @@ def load_profile(key: str) -> Profile:
     if prof.values.get("printer_settings_id") != p.preset or prof.tools != p.tools:
         raise Refusal(f"{path} is not the {p.preset} ({p.tools} tools) profile -- run slicerbridge templates --refresh")
     return prof
+
+
+def load_profile(key: str, ftype: str = "PLA") -> Profile:
+    """Printer `key`'s profile for filament type `ftype`, built first if it isn't; a refusal for a type
+    whose profile couldn't be built, saying why."""
+    if not profiles_built(key):
+        refresh_profile(key)
+    why = (_meta(key) or {}).get("missing", {}).get(ftype)
+    if why:
+        raise Refusal(f"its {ftype} profile couldn't be built: {why}")
+    return read_profile(profile_dir(key) / f"{ftype}.ini", key)
+
+
+def compose(base: Profile, by_type: dict, types: list[str]) -> Profile:
+    """The profile with tool n's filament settings from its type's profile (types[n - 1] names it): what
+    PrusaSlicer saves with each tool's own filament preset (--material-profile once per tool), entry by
+    entry, as its PresetBundle::full_fff_config() puts them together. The printer's and print's settings
+    are the same in every type's profile. A filament setting held once, not per tool (filament_vendor),
+    is the first tool's, as PrusaSlicer takes it."""
+    tools = base.tools
+    profiles = [base, *by_type.values()]
+    keys = [k for k, _ in base.items]
+    keys += sorted({k for prof in profiles for k in prof.values} - set(keys))
+    if [k for k, _ in base.items] == sorted(k for k, _ in base.items):
+        keys.sort()  # as PrusaSlicer saves them
+    items = []
+    for k in keys:
+        def value(prof):
+            v = prof.values.get(k)
+            if v is None and k in CUMULATIVE:
+                v = ";".join([""] * (sum(CUMULATIVE[k]) + tools))
+            return v
+        v, vals = value(base), [value(by_type[t]) for t in types]
+        if all(x == v for x in vals):
+            if v is not None and not (k in CUMULATIVE and not v.replace(";", "")):
+                items.append((k, v))
+            continue
+        have = per_tool(k, v, tools) if v is not None else None
+        cols = [per_tool(k, x, tools) if x is not None else None for x in vals]
+        if have is None and all(c is None for c in cols) and all(x is not None for x in vals):
+            items.append((k, vals[0]))  # held once: the first tool's
+            continue
+        if have is None or any(c is None or c[0] != have[0] for c in cols):
+            raise Refusal(f"the {base.values.get('printer_settings_id')} profiles differ in {k}, held per tool in "
+                          f"some and not others -- run slicerbridge templates --refresh")
+        heads = [c[1] for c in cols if any(c[1])] or [have[1]]
+        tails = [c[3] for c in cols if any(c[3])] or [have[3]]
+        joined = have[0].join([*heads[0], *(c[2] for c in cols), *tails[0]])
+        if not (k in CUMULATIVE and not joined.replace(";", "")):
+            items.append((k, joined))
+    return Profile(base.header, items, dict(items))
+
+
+def composed_profile(key: str, types: list[str]) -> Profile:
+    """Printer `key`'s profile with tool n's filament preset that of types[n - 1]."""
+    base = load_profile(key)
+    return compose(base, {t: base if t == "PLA" else load_profile(key, t) for t in set(types)}, types)
+
+
+# What makes a tool's filament its type, as check 9 compares it in PrusaSlicer's reading and check 12 in the file.
+TOOL_KEYS = ("filament_settings_id", "filament_type", "temperature", "first_layer_temperature")
+
+
+def tool_entry(values: dict, key: str, tool: int, tools: int) -> Optional[str]:
+    """Tool `tool`'s entry (1-based, its quotes off) of a setting held per tool, in a config of `tools` tools."""
+    v = values.get(key)
+    if v is None:
+        return None
+    head, tail = CUMULATIVE.get(key, (0, 0))
+    for sep in (";", ","):
+        e = entries(v, sep)
+        if len(e) == head + tools + tail:
+            return e[head + tool - 1].strip('"')
+    return None
+
+
+def number(text: str) -> float:
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def temperature_notes(prof: Profile, types: list[str], used: list[int]) -> list[str]:
+    """What the output says about the used tools' filaments together: one nozzle (the MMU3), and one bed.
+
+    PrusaSlicer 2.9.6 slices any of them together (Print::validate has no check on it). Through one
+    nozzle it sets each filament's temperature at its change, M104, and goes on without waiting. The bed
+    heats for the first filament each layer prints (bed_temperature_extruder 0); its app warns where two
+    used filaments' bed temperatures differ by more than 15 C (_BED_TEMPS_DIFFER), and the command line
+    doesn't.
+    """
+    notes = []
+
+    def temps(k):
+        return {t: number(tool_entry(prof.values, k, t, prof.tools) or "") for t in used}
+    nozzle = temps("temperature")
+    if prof.values.get("single_extruder_multi_material") == "1" and len(set(nozzle.values())) > 1:
+        notes.append(f"one nozzle for {', '.join(f'T{t} {types[t - 1]} at {c:g} C' for t, c in nozzle.items())}: "
+                     f"PrusaSlicer slices them together, without a warning, and at each filament change sets the "
+                     f"next one's temperature and goes on without waiting for it")
+    bed, first = temps("bed_temperature"), temps("first_layer_bed_temperature")
+    apart = max(bed.values()) - min(bed.values()) > 15 or max(first.values()) - min(first.values()) > 15
+    if apart and prof.values.get("bed_temperature_extruder", "0") == "0":
+        notes.append(f"one bed for {', '.join(f'T{t} {types[t - 1]} at {bed[t]:g} C (first layer {first[t]:g})' for t in used)}: "
+                     f"PrusaSlicer heats it for the first filament each layer prints. To pick one, set Print "
+                     f"Settings > Multiple Extruders > Bed temperature by extruder")
+    return notes
 
 
 def build_config(prof: Profile, src: Source, mapping: dict, printer: Printer,
@@ -963,11 +1232,18 @@ def verify(out: Path, src: Optional[Source], plate: Optional[Plate], mapping: di
                            f"{got[0]:.2f} x {got[1]:.2f} x {got[2]:.2f} mm, source {want[0]:.2f} x {want[1]:.2f} x "
                            f"{want[2]:.2f}" + (" (turned 90)" if placement is not None and placement.rotated else ""))
 
+    # the tools the plate prints with, and the type each should be
+    used = sorted(set(mapping.values())) or sorted({*states, *vol_ext, *(int(e) for e in out_obj if e)} or {1})
+    if src is not None:
+        want_types, gaps = typed_tools(src, mapping, printer)
+    else:
+        want_types, gaps = file_types(values, printer), []
+
     # 9. PrusaSlicer itself opens it and reads the same config
     if ps:
         model_tris = sum(b - a + 1 for vs in vols.values() for a, b, md in vs
                          if md.get("volume_type", "ModelPart") == "ModelPart")
-        checks.append(prusaslicer_check(out, ps, model_tris, mapping, src, tools))
+        checks.append(prusaslicer_check(out, ps, model_tris, mapping, src, tools, values, used))
     # 10. PrusaSlicer slices it and writes the G-code (only with --slice; a plate
     # bigger than the bed can't be sliced at full size, so it isn't tried)
     if ps and slice_it:
@@ -978,10 +1254,50 @@ def verify(out: Path, src: Optional[Source], plate: Optional[Plate], mapping: di
             checks.append(slice_check(out, ps))
     if size_check is not None:
         checks.append(size_check)
+    checks.append(type_check(values, prof, printer, used, want_types, gaps, src is not None))
     return checks
 
 
-def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: Optional[Source], tools: int) -> Check:
+def type_check(values: dict, prof: Profile, printer: Printer, used: list[int], want: list, gaps: list,
+               from_source: bool) -> Check:
+    """12. Each tool's filament is its type's preset, of that type's kind (PRUSA_KINDS): a type never
+    prints as another. With the source, the type is its slot's; without, the one its preset stands for.
+    Its temperatures are shown, and one that isn't its preset's own here (the profile in the cache,
+    which a newer Prusa bundle can change) is a warning."""
+    tools = printer.tools
+    wrong, drift, shown = list(gaps), [], []
+    for t in used:
+        got = {k: tool_entry(values, k, t, tools) for k in (*TOOL_KEYS, "filament_abrasive")}
+        ftype = want[t - 1] if t <= len(want) else None
+        if ftype is None:
+            wrong.append(f"T{t}'s {got['filament_settings_id']!r} isn't a preset SlicerBridge uses for the {printer.label}")
+            continue
+        preset = printer.filaments.get(ftype)
+        kind, abrasive = PRUSA_KINDS.get(ftype, (None, None))
+        shown.append(f"T{t} {ftype} {got['filament_settings_id']} {got['temperature']}/{got['first_layer_temperature']} C")
+        if got["filament_settings_id"] != preset:
+            wrong.append(f"T{t} is {ftype}, and its preset is {got['filament_settings_id']!r}, not {preset!r}")
+        elif got["filament_type"] != kind or (got["filament_abrasive"] is not None
+                                               and (got["filament_abrasive"] == "1") != abrasive):
+            wrong.append(f"T{t} is {ftype}, and its filament is typed {got['filament_type']}"
+                         + (", abrasive" if got["filament_abrasive"] == "1" else ""))
+        else:
+            mine = {k: tool_entry(prof.values, k, t, tools) for k in ("temperature", "first_layer_temperature")}
+            if any(got[k] != v for k, v in mine.items()):
+                drift.append(f"T{t} prints at {got['temperature']}/{got['first_layer_temperature']} C, its preset "
+                             f"here at {mine['temperature']}/{mine['first_layer_temperature']} C")
+    detail = ", ".join(shown) or "no tool"
+    if not from_source:
+        detail += " (types by preset: no source)"
+    if wrong:
+        detail += "  WRONG: " + "; ".join(wrong)
+    elif drift:
+        detail += "  " + "; ".join(drift) + " (converted with another Prusa bundle? convert it again)"
+    return Check("12", "each tool's filament is its type's preset", not wrong, detail, warn=bool(drift) and not wrong)
+
+
+def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: Optional[Source], tools: int,
+                      written: Optional[dict] = None, used: Optional[list] = None) -> Check:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         saved = Path(tmp) / "loaded.ini"
         try:
@@ -1000,11 +1316,16 @@ def prusaslicer_check(out: Path, ps: str, model_tris: int, mapping: dict, src: O
     colors_ok = bool(loaded) and (src is None or all(  # without the source, there's no palette to compare
         tool <= len(fc) and fc[tool - 1].upper() == src.palette[old - 1] for old, tool in mapping.items()))
     nt = len(loaded.get("nozzle_diameter", "").split(",")) if loaded.get("nozzle_diameter") else 0
-    ok = r.returncode == 0 and facets == model_tris and colors_ok and nt == tools
+    # each tool's filament, as PrusaSlicer reads it, is the one written
+    odd = [f"T{t} {k}" for t in (used or []) for k in TOOL_KEYS
+           if tool_entry(loaded, k, t, tools) != tool_entry(written or {}, k, t, tools)] if written is not None else []
+    ok = r.returncode == 0 and facets == model_tris and colors_ok and nt == tools and bool(loaded) and not odd
     err = (r.stderr.strip().splitlines() or [""])[-1][:120]
     return Check("9", "PrusaSlicer --info loads it", ok,
                  f"exit {r.returncode}, facets {facets:,} (want {model_tris:,}), manifold {','.join(manifold)}, "
-                 f"reloaded {nt} tools, colors {('ok' if colors_ok else 'WRONG') if src is not None else 'not compared'}" + (f"  {err}" if r.returncode else ""),
+                 f"reloaded {nt} tools, colors {('ok' if colors_ok else 'WRONG') if src is not None else 'not compared'}"
+                 + (f", filaments {'WRONG: ' + ', '.join(odd) if odd else 'ok'}" if written is not None else "")
+                 + (f"  {err}" if r.returncode else ""),
                  r.stderr)  # all of it: refused_key looks for the setting PrusaSlicer names
 
 
@@ -1063,8 +1384,6 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
                 prefix: str = "", suffix: str = "") -> list:
     """Write `src`'s file(s) for one Prusa printer, one per plate; returns its table rows."""
     printer = PRINTERS[printer_key]
-    prof = load_profile(printer_key)
-    bed = prof.bed
     ps = find_prusaslicer()
     OUT = out / src.display
 
@@ -1075,7 +1394,17 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
     # Every decision first: nothing is written for a model that would be refused (and
     # convert() takes back an older file for it, so it doesn't stand in for this run).
     mapping = decide_mapping(src, printer, explicit)
-    check_filament_types(src, mapping)
+    types = tool_types(src, mapping, printer)
+    # Each tool gets its own type's preset: the printer's profile, its filament columns from each type's.
+    try:
+        prof = composed_profile(printer_key, types)
+    except Refusal as e:
+        raise Refusal(f"REFUSING {src.slug} for the {printer.label}: {e}")
+    bed = prof.bed
+    used = sorted(set(mapping.values()))
+    filaments = ", ".join(f"T{t} {types[t - 1]} ({tool_entry(prof.values, 'filament_settings_id', t, prof.tools)}, "
+                          f"{tool_entry(prof.values, 'temperature', t, prof.tools)} C)" for t in used)
+    mixed = temperature_notes(prof, types, used)
     placements = [plan_placement(src, plate, bed) for plate in src.plates]
     # A tall print gets the heavier wipe tower (tall.py) if every plate's tower finds a
     # spot for its wider brim. PrusaSlicer's tower has no speed of its own to slow, so
@@ -1153,6 +1482,9 @@ def convert_one(src: Source, printer_key: str, explicit: Optional[dict], slice_i
         for w in stats.warnings:
             print(f"       panda2prusa: {w}")
         if plate is src.plates[0]:
+            print(f"       filaments: {filaments}")
+            for n in mixed:
+                print(f"       ⚠ {n}")
             if tall_note:
                 print(f"       {tall_note}")
             for n in notes:
@@ -1200,7 +1532,6 @@ def audit(f: Path, src_path: Optional[Path], key: str, slice_it: bool = False,
     a conversion without --map would have used, and says so.
     """
     printer = PRINTERS[key]
-    prof = load_profile(key)
     ps = find_prusaslicer()
     made = read_record(f)
     info, problems, warnings = [], [], []
@@ -1231,9 +1562,18 @@ def audit(f: Path, src_path: Optional[Path], key: str, slice_it: bool = False,
         if plate is None:
             return info, [f"the source has no plate {number} (plates {sorted(plates)}): is it the project this "
                           f"file was made from?"], warnings
-        placement = plan_placement(src, plate, prof.bed)
+        types = typed_tools(src, mapping, printer)[0]
     else:
-        info.append("no --source: the paint, colors, modifiers and size aren't compared")
+        info.append("no --source: the paint, colors, modifiers and size aren't compared, and each tool's "
+                    "filament type is the one its preset stands for")
+        with zipfile.ZipFile(f) as z:
+            cfg = z.read("Metadata/Slic3r_PE.config").decode() if "Metadata/Slic3r_PE.config" in z.namelist() else ""
+        types = [t or "PLA" for t in file_types(read_3mf_config(cfg)[0], printer)]
+    # The profile the conversion composed: each tool's filament its type's (a type with none: PLA's,
+    # and check 12 says so).
+    prof = composed_profile(key, [t if t in printer.filaments else "PLA" for t in types])
+    if plate is not None:
+        placement = plan_placement(src, plate, prof.bed)
     if ps is None:
         warnings.append("PrusaSlicer isn't installed: it doesn't load the file (check 9)"
                         + (" or slice it (10)" if slice_it else ""))
@@ -1266,7 +1606,7 @@ def inspect(path: Path, keys: list[str]) -> list[str]:
     for key in keys:
         pr = PRINTERS[key]
         try:
-            bed = load_profile(key).bed
+            bed = load_profile(key).bed  # every type's profile has the printer's bed
         except Refusal as e:
             lines.append(f"    {pr.label}: no profile ({str(e).splitlines()[0]})")
             continue
@@ -1278,7 +1618,11 @@ def inspect(path: Path, keys: list[str]) -> list[str]:
             else:
                 bits.append(f"bigger than the bed (fits <= {math.floor(pl.max_scale * 1000) / 10:g}%)")
         tools = "ok" if len(src.used) <= pr.tools else "NO"
-        lines.append(f"    {pr.label}: tools {tools} ({len(src.used)}/{pr.tools}), bed {' | '.join(bits)}")
+        gaps = [s for s in src.used if slot_type(src, s) not in pr.filaments]
+        kinds = "ok" if not gaps else "NO (" + ", ".join(f"slot {s} {src.types[s - 1] if s <= len(src.types) else '?'}"
+                                                         for s in gaps) + ")"
+        lines.append(f"    {pr.label}: tools {tools} ({len(src.used)}/{pr.tools}), filament types {kinds}, "
+                     f"bed {' | '.join(bits)}")
     return lines
 
 

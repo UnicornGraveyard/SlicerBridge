@@ -2,6 +2,102 @@
 
 ## Unreleased
 
+- Check 13 slices once more a plate whose slice prints its filaments on the first layer and only one of them on
+  every layer above it, without a tool change. Bambu Studio 2.9.1's command line once sliced a four-filament
+  X2D file so, printing all four parts in one filament from layer 2 up, and changed tools 375 or 437 times on the
+  same file the next four times; check 13 had asked only that two tools be used. A second slice that changes
+  tools is the one checked, with a warning; the same again is a warning to look in the slicer, since a model
+  whose other colors are only on its first layer reads the same way.
+- Bambu Lab files carry each printer's own start, end, filament-change and layer-change G-code again. Bambu
+  Studio 2.9.1 moved them out of its printer presets into template files the preset `include`s, and the template
+  build followed only `inherits`: every Bambu template built with 2.9.1 got the command line's generic fallback
+  (a 577-character start G-code, the same on an A1 and an X1C, where the X1C's own is 20,669), and the
+  two-nozzle printers' filaments lacked their per-nozzle values. Presets are flattened with their includes now,
+  and templates built the old way are rebuilt (`templates.FORMAT`). Bambu files converted with Bambu Studio
+  2.9.1 before this should be converted again. With them, a filament whose preset keeps a setting per nozzle
+  variant (the H2D's Generic TPU) sits beside one that keeps a single value for all its variants (its PLA):
+  that single value now goes on each of its variants, as Bambu Studio lines them up, where PLA and TPU made
+  five entries for seven variants and check 12 refused the file.
+- Every main filament type converts: PCTG, ASA, PC, PA (nylon), PLA-CF, PETG-CF, PA-CF, HIPS, PVA and BVOH, with
+  PLA, PETG, ABS and both TPUs (`printers.MAIN_TYPES`). Each prints on the printer's own preset of that type,
+  wherever its slicer has one: every Bambu printer has them all but the A1 mini, which has no ABS, ASA, PC or
+  nylon. A type a printer has no preset for is refused, with which filament and why; a type never prints as
+  another. Converted and sliced in each printer's own slicer, test models of PLA beside three other types,
+  one part each, covered every type on every printer: 114 models on the 30 Bambu and OrcaSlicer-family printers
+  and the U1, and in the G-code each tool laid its model only in its own part, at its own preset's temperature
+  (2026-11-08). `slicerbridge printers` (and the MCP server's `list_printers`) lists each printer's types.
+- The Prusa printers respect each filament's type too, where they took PLA only (any other type was refused).
+  Each tool gets PrusaSlicer's preset for its own type: Prusa's own (Prusament, Prusa ABS) where the printer has
+  one, else Generic. The XL takes PLA, PETG, ABS, ASA, PC, PETG-CF, PA-CF, HIPS and TPU; the Core One INDX PLA,
+  PETG, ABS, ASA, PC, PETG-CF, PVA and TPU; the MMU3 PLA, PETG, ABS, ASA and PC (`printers.PRUSA_PRINTERS`). A
+  type a printer has no preset for is refused, with which filament and why: PrusaSlicer has no Prusa or Generic
+  PCTG, nylon (PA), PLA-CF or BVOH preset for any of them (filament makers' own, on some), none for Bambu's TPU
+  for AMS, and no flex at all for the MMU3. PrusaSlicer saves a profile per printer and type, each checked to be that type
+  (`filament_type`, and `filament_abrasive` for the carbon-fibre ones, which PrusaSlicer types as their base),
+  and a file's tools take their filament settings from their type's profile, entry by entry, as PrusaSlicer
+  itself puts them together for a preset per tool. Profiles built before are rebuilt. Check 12 holds each
+  tool to its type's preset, and check 9 to PrusaSlicer reading each tool's filament as the file has it.
+  PrusaSlicer slices any of them together, without a warning: the output says when the MMU3's filaments print
+  at different temperatures through its one nozzle (PrusaSlicer sets each one's at its change and doesn't wait
+  for it), and when filaments want bed temperatures more than 15 C apart, since PrusaSlicer heats the one bed
+  for the first filament each layer prints. Converted and sliced in PrusaSlicer 2.9.6 (Prusa bundle 2.5.13), 33
+  test models of PLA beside each other type, and beside as many as the tools hold, one 20 mm part each, covered
+  every type on all four printers: in the G-code each tool laid its model only in its own part, all of it at its
+  own preset's temperature, and each file's filament settings were the ones PrusaSlicer saves for those presets,
+  key for key (2026-11-08).
+- The U1 gets Snapmaker Orca's own U1 preset for each of those types but HIPS, which it has none for, with its
+  values. A type it has no preset for is refused: it had printed as PLA, at PLA's temperature.
+- When a printer's slicer won't print two of a model's filaments together until a preference allows it, the
+  output names the preference. OrcaSlicer holds each filament's temperature to every other's recommended range on
+  a printer whose filaments share one nozzle, so a PLA and PETG model on a K2 Plus or Kobra 3 didn't slice
+  ("Selected nozzle temperatures are incompatible") until Preferences > Control > Slicing > Remove mixed
+  temperature restriction is on. Snapmaker Orca won't mix a high-temperature type (ABS, ASA, PC, PA) with a low
+  one (PLA, TPU, PVA) on the U1. Check 13 slices such a file with the preference on, as its downloader will: with
+  `--allow-mix-temp`, or, for Snapmaker Orca, whose command line has no such switch, on a copy with the
+  high-temperature types named PETG at the file's own temperatures.
+- A preset printing outside its own recommended temperature range isn't used: Anycubic's Kobra X presets print
+  ABS, ASA and PVA at 205 C, their PLA's temperature, so ABS is refused for the Kobra X now (it printed at 205 C).
+  A type whose template can't be built is refused for that printer, and every other type still converts; only
+  PLA failing fails the printer. A slicer command line that hangs or crashes saving a template gets one more
+  try, and a second keeps nothing, so the next run builds it again: four Bambu Studio command lines at once
+  beside its open app now and then never finished.
+- TPU converts. Bambu's two TPUs stay apart: plain TPU (`TPU`, soft) gets every Bambu printer's Generic TPU, and
+  Bambu's TPU for AMS (`TPU-AMS`, about 68D) its Generic TPU for AMS; a plain TPU never becomes TPU for AMS. The
+  output says to load soft TPU by hand on the external spool, since an AMS can't feed it. On the H2D, H2D Pro,
+  H2C and X2D, which print plain TPU on one nozzle only, it's mapped to that nozzle, in the project and on each
+  plate, so a plate mapped by hand keeps it printable. Every OrcaSlicer-family
+  printer but the Creator 5 and 5 Pro gets its maker's own TPU preset; TPU for AMS, which none has a preset for,
+  is refused there with why. Sliced in each printer's own slicer, a test model with a TPU band as its own part
+  laid the TPU only in the band, at its preset's temperature, on all 11 Bambu printers, 17 OrcaSlicer-family
+  printers and the U1 (2026-11-07).
+- The U1 gives an extruder printing TPU, TPU for AMS, PETG, PETG HF or ABS that U1 preset's own values, from
+  Snapmaker Orca 2.4.1's profiles through each preset's inherits chain (`data/u1/filaments.json`, written by
+  `scripts/u1_filaments.py`), not only its name. The other values had stayed the template's PLA: a TPU printed at
+  220 C and 15 mm^3/s where Snapmaker's TPU 95A HF says 230 and 9. Plain PETG had printed as PLA. A U1 project's
+  own presets keep their values.
+- A Bambu printer's walls and infill no longer all print in filament 1 when the project came from Snapmaker Orca
+  or another OrcaSlicer fork. Their project-wide wall, sparse and solid infill filament default to 1, where each
+  part's own filament wins; Bambu Studio 2.9's default is 0, and a 1 puts every part's walls and infill in
+  filament 1. Carried, it printed a TPU band in PLA without a word. They're carried now only where the project
+  marks them as the designer's.
+- The H3C names a hotend per filament for Bambu Studio (`Standard#2` for two), up to its stock rack's eight
+  Standard: told it had one, Bambu Studio printed a PLA and TPU project from one hotend and purged 8.2 g of TPU
+  for a 2.1 g part. `filament_map_2`, `filament_nozzle_map` and `filament_volume_map` get one entry per filament.
+- A model whose colors are its parts' or objects' own filaments, with no paint, passes check 4 on every printer.
+  Check 12 takes a Bambu filament with more nozzle variants than another (the H2D's Generic TPU has four, its PLA
+  one). The U1's audit checks each extruder prints its source slot's kind of filament (check 3b).
+- The Bambu Lab H3C (`h3c`, nine toolheads), from Bambu Studio's own presets. 35 printers in all.
+- A two-nozzle Bambu printer (H2D, H2D Pro, H2C, X2D) gets room for the bigger prime tower it builds when the
+  slicer puts the colors on both nozzles, 1.6 times one nozzle's. StoneBrow's X2D tower had been placed for
+  45.5 x 43 mm, printed 55.2 x 52.4, and its 10 mm brim ran 4 mm off the bed, so Bambu Studio refused the file
+  ("G-code outside of the printable area").
+- With supports on, a model on a two-nozzle printer is kept 6 mm farther from the edge one nozzle can't reach
+  past, so support spreading 9 mm past its box stays 2 mm inside. The bed's edge clips support, but one nozzle's
+  limit doesn't: StoneBrow's ran into the strip the H2D's and X2D's other nozzle can't reach, and Bambu Studio
+  refused the files ("G-code in unprintable area of multi-extruder printers").
+- Check 14, and the heavier tower step the engine tries at a tower's spot after placing it, keep the tower's brim
+  2 mm from the bed's edge, as placement does. StoneBrow's X2D had been given a 10 mm brim estimated to reach the
+  front edge exactly.
 - A Prusa file whose wipe tower finds no spot clear of the model says so: PrusaSlicer stops slicing it with a
   wipe tower/model path conflict (Gatefang on the MMU3, found testing 0.4.3). The engine worked this out and
   then dropped it, so only a tall print got a warning. The file is still written, as the OrcaSlicer printers'
