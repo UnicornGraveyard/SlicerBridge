@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-10)
 
 - The designer's settings that weren't carried are named, on one line: ones the printer's slicer has no such
   setting for, and ones Bambu Studio keeps per nozzle where the printer keeps one value. The Bambu,
