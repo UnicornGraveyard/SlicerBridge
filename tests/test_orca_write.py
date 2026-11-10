@@ -137,6 +137,14 @@ def test_a_carried_value_the_slicer_wont_load_keeps_the_printers(tmp_path, slice
     assert "kept the printer's own brim_width (OrcaSlicer won't take '6'" in capsys.readouterr().out
 
 
+def test_a_setting_that_isnt_carried_is_named(tmp_path, slicer, capsys):
+    """Not a setting of this slicer, or kept per nozzle: it used to vanish without a word."""
+    made, _f = _convert(tmp_path, 40.0, seam_slope_made_up="1", brim_width=["5", "6"])
+    assert made == (1, 0)
+    assert ("not carried: brim_width (kept per nozzle); seam_slope_made_up (not a setting of the printer's slicer)"
+            in capsys.readouterr().out)
+
+
 def test_a_carried_value_read_back_as_another_keeps_the_printers(tmp_path, slicer, capsys):
     slicer.reads = {"wall_loops": ("4", "3")}
     made, f = _convert(tmp_path, 40.0, wall_loops="4")

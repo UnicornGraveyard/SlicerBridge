@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The designer's settings that weren't carried are named, on one line: ones the printer's slicer has no such
+  setting for, and ones Bambu Studio keeps per nozzle where the printer keeps one value. The Bambu,
+  OrcaSlicer-family and U1 files had left them out without a word; the Prusa files already said.
 - Check 13 slices once more a plate whose slice prints its filaments on the first layer and only one of them on
   every layer above it, without a tool change. Bambu Studio 2.9.1's command line once sliced a four-filament
   X2D file so, printing all four parts in one filament from layer 2 up, and changed tools 375 or 437 times on the

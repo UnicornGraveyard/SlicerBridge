@@ -44,6 +44,15 @@ def print_keys(src_cfg: dict) -> list:
     return sorted({k for k in src_cfg if shapes_the_print(k)} | marked_changed(src_cfg))
 
 
+def skipped_note(skipped: dict) -> str:
+    """One line for the output naming the designer's settings that weren't carried, grouped by why;
+    empty when none were. `skipped` is carry_print_settings()'s {key: why}."""
+    by_why: dict = {}
+    for k, why in sorted(skipped.items()):
+        by_why.setdefault("kept per nozzle" if why.startswith("Bambu Studio keeps it per nozzle") else why, []).append(k)
+    return "; ".join(f"{', '.join(keys)} ({why})" for why, keys in by_why.items())
+
+
 def carry_print_settings(src_cfg: dict, base: dict) -> tuple[dict, dict]:
     """({key: the source's value} to carry onto `base`, {key: why not}) for the print settings the designer chose.
 
