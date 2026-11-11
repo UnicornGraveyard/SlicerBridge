@@ -12,11 +12,13 @@ import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
 from builders import bambu_project
 from slicerbridge import output, printers
+from slicerbridge._vendor.panda2prusa import autobrim
 from slicerbridge.cli import main
 from slicerbridge.engines import prusa
 from slicerbridge.errors import Refusal
@@ -73,6 +75,8 @@ def made_up_profile(key: str, ftype: str = "PLA") -> str:
         "wipe_tower_width": "60",
         "wipe_tower_brim_width": "2",
         "wipe_tower_extra_spacing": "100%",
+        "brim_type": "outer_only",
+        "brim_width": "0",
     }
     return "# made up for SlicerBridge's tests\n" + "".join(f"{k} = {v}\n" for k, v in lines.items())
 
@@ -151,6 +155,44 @@ def test_a_model_with_more_colors_than_tools_is_refused_and_writes_nothing(tmp_p
     src = bambu_project(tmp_path / "five.3mf", paint={0: 2, 1: 3, 2: 4, 3: 5})  # five slots
     assert prusa.convert(src, "Five", ["indx4"], tmp_path / "out") == (0, 1)
     assert not prusa.printer_files(tmp_path / "out" / "Five", "Five", "indx4")
+
+
+def _brims(f):
+    """(the print profile's brim type and width, each object's own brim settings) in a written file."""
+    with zipfile.ZipFile(f) as z:
+        values, _read, _lines = prusa.read_3mf_config(z.read("Metadata/Slic3r_PE.config").decode())
+        objects = ElementTree.fromstring(z.read("Metadata/Slic3r_PE_model.config")).findall("object")
+    return ((values.get("brim_type"), values.get("brim_width")),
+            [{m.get("key"): m.get("value") for m in o.findall("metadata") if m.get("key").startswith("brim")}
+             for o in objects])
+
+
+def test_a_project_wide_auto_brim_is_worked_out_per_object_not_printed_at_its_width(tmp_path, profiles, capsys):
+    """Shamus: Bambu Studio works an automatic brim's width out per object and ignores brim_width. 0.4.0
+    carried the width, so PrusaSlicer printed a fixed 5 mm brim on every object, one that gets none too."""
+    src = bambu_project(tmp_path / "auto.3mf", plates=1,
+                        extra_settings={"brim_type": "auto_brim", "brim_width": "5"})
+    assert prusa.convert(src, "Auto", ["xl"], tmp_path / "out") == (1, 0)
+    profile, objects = _brims(tmp_path / "out" / "Auto" / "Auto - Prusa XL.3mf")
+    assert profile == ("outer_only", "0")  # the profile's, not the project's 5 mm
+    assert objects == [{"brim_type": "no_brim"}]  # a 40 mm cube is too squat for an automatic brim
+    assert "auto_brim worked out to no brim" in capsys.readouterr().out
+
+
+def test_an_auto_brim_that_works_out_to_a_width_is_that_objects_outer_brim(tmp_path, profiles, monkeypatch):
+    monkeypatch.setattr(autobrim, "brim_width", lambda *args, **kwargs: 6.5)  # as for a tall, narrow object
+    src = bambu_project(tmp_path / "auto.3mf", plates=1,
+                        extra_settings={"brim_type": "auto_brim", "brim_width": "5"})
+    assert prusa.convert(src, "Auto", ["xl"], tmp_path / "out") == (1, 0)
+    assert _brims(tmp_path / "out" / "Auto" / "Auto - Prusa XL.3mf") == (
+        ("outer_only", "0"), [{"brim_type": "outer_only", "brim_width": "6.5"}])
+
+
+def test_a_brim_of_a_set_width_is_still_carried_at_that_width(tmp_path, profiles):
+    src = bambu_project(tmp_path / "set.3mf", plates=1,
+                        extra_settings={"brim_type": "outer_only", "brim_width": "6"})
+    assert prusa.convert(src, "Set", ["xl"], tmp_path / "out") == (1, 0)
+    assert _brims(tmp_path / "out" / "Set" / "Set - Prusa XL.3mf") == (("outer_only", "6"), [{}])
 
 
 def test_a_tall_print_gets_the_heavier_wipe_tower(tmp_path, profiles, capsys):
