@@ -25,8 +25,10 @@ def leaf(state: int) -> str:
 
 def _cube(size: float) -> tuple[list, list]:
     v = [(x, y, z) for x in (0, size) for y in (0, size) for z in (0, size)]
-    faces = [(0, 2, 3), (0, 3, 1), (4, 5, 7), (4, 7, 6), (0, 1, 5), (0, 5, 4),
-             (2, 6, 7), (2, 7, 3), (0, 4, 6), (0, 6, 2), (1, 3, 7), (1, 7, 5)]
+    # Counter-clockwise seen from outside, as 3MF requires and Bambu Studio writes: a cut through the
+    # cube then has the area of its footprint (the automatic brim needs one), not minus it.
+    faces = [(0, 3, 2), (0, 1, 3), (4, 7, 5), (4, 6, 7), (0, 5, 1), (0, 4, 5),
+             (2, 7, 6), (2, 3, 7), (0, 6, 4), (0, 2, 6), (1, 7, 3), (1, 5, 7)]
     return v, faces
 
 
