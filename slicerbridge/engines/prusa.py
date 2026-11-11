@@ -520,10 +520,34 @@ def _meta(key: str) -> Optional[dict]:
         return None
 
 
+def prusaslicer_version() -> Optional[str]:
+    """The installed PrusaSlicer's version, or None without one. Profiles another version saved are
+    rebuilt, as the orca engine's templates are: PrusaSlicer 2.9.7 added used_filament_compensation,
+    which profiles 2.9.6 saved don't have, so a file composed from them left it out."""
+    if not find_prusaslicer():
+        return None
+    s = SLICERS["prusa"]
+    try:
+        stamp = s.binary.stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    return _prusaslicer_version(str(s.app), stamp)
+
+
+@functools.lru_cache(maxsize=4)
+def _prusaslicer_version(_app: str, _stamp: int) -> str:
+    from .. import templates  # the one way to read a slicer's version, for every engine
+    return templates.app_version(SLICERS["prusa"])
+
+
 def profiles_built(key: str) -> bool:
-    """Whether printer `key`'s profiles are built, for every type of its table as it stands."""
+    """Whether printer `key`'s profiles are built, for every type of its table as it stands, by the
+    PrusaSlicer installed (without one, those already built are used)."""
     meta = _meta(key)
     if not meta or meta.get("format") != FORMAT or meta.get("presets") != PRINTERS[key].filaments:
+        return False
+    version = prusaslicer_version()
+    if version is not None and meta.get("prusaslicer") != version:
         return False
     missing = meta.get("missing", {})
     return all((profile_dir(key) / f"{t}.ini").exists() for t in PRINTERS[key].filaments if t not in missing)
@@ -634,8 +658,9 @@ def refresh_profile(key: str) -> dict:
     bundle = datadir / "vendor" / "PrusaResearch.ini"
     ver = re.search(r"^config_version = (\S+)", bundle.read_text(encoding="utf-8", errors="replace"), re.M)
     ver = ver.group(1) if ver else "?"
-    (folder / "meta.json").write_text(json.dumps({"format": FORMAT, "bundle": ver, "presets": p.filaments,
-                                                  "missing": missing}, indent=1), encoding="utf-8")
+    (folder / "meta.json").write_text(json.dumps({"format": FORMAT, "bundle": ver, "prusaslicer": prusaslicer_version(),
+                                                  "presets": p.filaments, "missing": missing}, indent=1),
+                                      encoding="utf-8")
     print(f"  profiles {key:6} <- {p.preset} / {p.print_preset} / {len(p.filaments) - len(missing)} filament "
           f"types  (Prusa bundle {ver})" + "".join(f"\n       !  no {t} for it: {why}" for t, why in missing.items()))
     return missing

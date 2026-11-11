@@ -2,6 +2,11 @@
 
 ## 0.5.0 (2026-11-10)
 
+- A Prusa printer's profiles are rebuilt when PrusaSlicer is updated, as the Bambu and OrcaSlicer-family
+  templates are when their slicer is: they record the PrusaSlicer that saved them. PrusaSlicer 2.9.7 added
+  `used_filament_compensation`, which profiles 2.9.6 saved don't have, so the Prusa files left it out (found by
+  the slicer tests before releasing 0.5.0). Profiles saved before this don't say which PrusaSlicer saved them,
+  and are rebuilt once.
 - The designer's settings that weren't carried are named, on one line: ones the printer's slicer has no such
   setting for, and ones Bambu Studio keeps per nozzle where the printer keeps one value. The Bambu,
   OrcaSlicer-family and U1 files had left them out without a word; the Prusa files already said.

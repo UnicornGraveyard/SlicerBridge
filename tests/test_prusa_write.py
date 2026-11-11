@@ -441,6 +441,7 @@ def test_building_a_types_profile_checks_its_preset_is_that_type(tmp_path, monke
     is left out, why kept, and every other type built."""
     monkeypatch.setattr(prusa, "PROFILES", tmp_path / "prusa-profiles")
     monkeypatch.setattr(prusa, "find_prusaslicer", lambda: "prusa-slicer")
+    monkeypatch.setattr(prusa, "prusaslicer_version", lambda: "2.9.7")
     monkeypatch.setattr(prusa, "ensure_datadir", lambda: tmp_path)
     (tmp_path / "vendor").mkdir()
     (tmp_path / "vendor" / "PrusaResearch.ini").write_text("config_version = 9.9.9\n", encoding="utf-8")
@@ -480,6 +481,39 @@ def test_profiles_of_the_old_format_or_another_table_are_rebuilt(tmp_path, profi
     assert not prusa.profiles_built("xl")
     (profiles / "xl" / "meta.json").write_text(json.dumps({**meta, "presets": {"PLA": "Prusament PLA @XLIS"}}))
     assert not prusa.profiles_built("xl")
+
+
+def test_profiles_another_prusaslicer_saved_are_rebuilt(tmp_path, profiles, monkeypatch):
+    """PrusaSlicer 2.9.7 added used_filament_compensation, which profiles 2.9.6 saved lack."""
+    meta = json.loads((profiles / "xl" / "meta.json").read_text())
+    (profiles / "xl" / "meta.json").write_text(json.dumps({**meta, "prusaslicer": "2.9.6"}))
+    assert prusa.profiles_built("xl")  # no PrusaSlicer to rebuild them with: the ones there are used
+    monkeypatch.setattr(prusa, "prusaslicer_version", lambda: "2.9.6")
+    assert prusa.profiles_built("xl")
+    monkeypatch.setattr(prusa, "prusaslicer_version", lambda: "2.9.7")
+    assert not prusa.profiles_built("xl")
+    (profiles / "xl" / "meta.json").write_text(json.dumps(meta))  # saved before profiles said which
+    assert not prusa.profiles_built("xl")
+
+
+def test_building_profiles_records_the_prusaslicer_that_saved_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(prusa, "PROFILES", tmp_path / "prusa-profiles")
+    monkeypatch.setattr(prusa, "find_prusaslicer", lambda: "prusa-slicer")
+    monkeypatch.setattr(prusa, "prusaslicer_version", lambda: "2.9.7")
+    monkeypatch.setattr(prusa, "ensure_datadir", lambda: tmp_path)
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "vendor" / "PrusaResearch.ini").write_text("config_version = 2.5.13\n", encoding="utf-8")
+
+    def save(cmd, timeout):
+        preset = cmd[cmd.index("--material-profile") + 1]
+        t = {v: k for k, v in prusa.PRINTERS["xl"].filaments.items()}[preset]
+        Path(cmd[cmd.index("--save") + 1]).write_text(made_up_profile("xl", t), encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(prusa, "run_slicer", save)
+    prusa.refresh_profile("xl")
+    assert json.loads((tmp_path / "prusa-profiles" / "xl" / "meta.json").read_text())["prusaslicer"] == "2.9.7"
+    assert prusa.profiles_built("xl")
 
 
 def test_a_painted_models_tools_take_their_slots_types(tmp_path, profiles):
