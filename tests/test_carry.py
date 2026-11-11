@@ -4,7 +4,7 @@ import zipfile
 from types import SimpleNamespace
 
 from builders import bambu_project
-from slicerbridge.carry import carry_print_settings, print_keys, shapes_the_print
+from slicerbridge.carry import carry_print_settings, print_keys, shapes_the_print, skipped_note
 from slicerbridge.engines import prusa
 from slicerbridge.engines import u1 as engine
 
@@ -44,6 +44,20 @@ def test_the_printers_own_settings_never_carry():
            "different_settings_to_system": ["prime_tower_width;support_filament;enable_prime_tower", ""]}
     carried, _ = carry_print_settings(src, {k: "x" for k in src})
     assert carried == {}
+
+
+def test_the_settings_not_carried_are_named_on_one_line_by_why():
+    assert skipped_note({}) == ""
+    assert skipped_note({"wall_direction": "not a setting of the printer's slicer",
+                         "brim_width": "Bambu Studio keeps it per nozzle (['5', '6'])",
+                         "seam_slope_type": "not a setting of the printer's slicer"}) == (
+        "brim_width (kept per nozzle); seam_slope_type, wall_direction (not a setting of the printer's slicer)")
+
+
+def test_the_u1_names_what_it_didnt_carry(tmp_path, capsys):
+    _u1_settings(tmp_path, "Odd", {"seam_slope_made_up": "1", "brim_width": ["5", "6"]})
+    assert ("not carried: brim_width (kept per nozzle); seam_slope_made_up (not a setting of the printer's slicer)"
+            in capsys.readouterr().out)
 
 
 def test_a_value_the_printer_already_has_or_keeps_per_nozzle_isnt_carried():

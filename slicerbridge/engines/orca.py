@@ -50,7 +50,7 @@ from .._vendor.panda2prusa.transform import Transform
 
 from .. import tall
 from .. import templates as templates_build
-from ..carry import carry_print_settings, marked_changed
+from ..carry import carry_print_settings, marked_changed, skipped_note
 from ..checks import orca as verify
 from ..errors import Refusal
 from ..output import land, partial, withdraw
@@ -1156,6 +1156,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         print(f"       {where}" + ", ".join(notes))
     if dropped:
         print("       kept the printer's own " + "; ".join(f"{k} ({why})" for k, why in dropped.items()))
+    if skipped:
+        print(f"       not carried: {skipped_note(skipped)}")
     if tallest > tall.TALL_PRINT_MM and bed.tower is not None:
         got = {k: v for k, v in tower_extra.items() if k not in dropped}
         print(f"       {tall.say(tower_step, tallest, got)}")

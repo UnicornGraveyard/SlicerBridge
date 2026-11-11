@@ -52,7 +52,7 @@ from .._vendor.panda2prusa.transform import Transform
 
 from .. import tall
 from .. import templates as templates_build
-from ..carry import carry_print_settings
+from ..carry import carry_print_settings, skipped_note
 from ..checks import orca as orca_check, u1 as u1check
 from ..errors import Refusal
 from ..output import land, partial, withdraw
@@ -664,12 +664,13 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         ordered, mapping = plan(slug, src, used)
         tallest = max(p.size[2] for p in plates)
         tower_extra: dict = {}
+        tower_step = len(tall.STEPS["orca"]) - 1  # tall.STEPS' index of the tower it gets: the slower one
         if bed.tower is not None and tallest > TALL_PRINT_MM:
             tower_extra = TALL_TOWER_TIGHT
-            for step in (TALL_TOWER, TALL_TOWER_STOCK_RIBS):
+            for i, step in enumerate((TALL_TOWER, TALL_TOWER_STOCK_RIBS)):
                 heavy = Bed.of({**u1, **step})
                 if not any(pl.tight or not pl.fits for pl in (place(slug, p, len(plates), heavy) for p in plates)):
-                    tower_extra, bed = step, heavy  # placed, and checked for room, with that tower's base
+                    tower_extra, tower_step, bed = step, i, heavy  # placed, and checked for room, with its base
                     break
         placements = [place(slug, p, len(plates), bed) for p in plates]
     except Refusal:
@@ -759,7 +760,7 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
 
         # ---- project_settings.config: U1 profile + the designer's print settings + our palette
         combined = u1.copy()
-        carried, _ = carry_print_settings(orig, u1)
+        carried, skipped = carry_print_settings(orig, u1)
         kept = not_carried(carried, u1, refused)
         carried = {k: v for k, v in carried.items() if k not in kept}
         combined.update(carried)
@@ -860,11 +861,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         print(f"       ⚠ {mixed}")
     if kept:
         print("       kept the U1's own " + "; ".join(f"{tall.describe({k: u1[k]})} ({why})" for k, why in kept.items()))
+    if skipped:
+        print(f"       not carried: {skipped_note(skipped)}")
     for w in slice_warnings:
         print(f"       ⚠ {w}")
     if tower_extra:
-        step = {id(TALL_TOWER): 0, id(TALL_TOWER_STOCK_RIBS): 1}.get(id(tower_extra), -1)
-        print(f"       {tall.say(tall.STEPS['orca'][step][0], tallest, tower_extra)}")
+        print(f"       {tall.say(tall.STEPS['orca'][tower_step][0], tallest, tower_extra)}")
     for p, pl in zip(plates, placements):
         where = f"plate {p.number}: " if len(plates) > 1 else ""
         print(f"       {where}{pl.size[0]:.1f} x {pl.size[1]:.1f} x {pl.size[2]:.1f} mm"
