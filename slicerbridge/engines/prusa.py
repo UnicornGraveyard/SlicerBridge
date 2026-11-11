@@ -337,6 +337,16 @@ def load_source(slug: str, display: str, path: Path) -> Source:
         if k in marked or translates(k, v):
             print_settings[k] = v
 
+    # Bambu Studio's automatic brim is worked out per object (OrcaSlicer's Brim.cpp), and brim_width
+    # goes unused. PrusaSlicer has no automatic brim; Panda2Prusa works one out per object, but only for
+    # an object whose own settings ask for it. So a project-wide one goes to every object that has no brim
+    # type of its own, and its unused width isn't carried: carried, it was a fixed brim on every object
+    # (5 mm on Shamus, where OrcaSlicer prints 6.6 mm; on a squat model that gets none, 5 mm all the same).
+    if print_settings.get("brim_type") == "auto_brim":
+        print_settings.pop("brim_width", None)
+        for so in project.settings_objects.values():
+            so.settings.setdefault("brim_type", "auto_brim")
+
     return Source(slug, display, path, project, palette, types, used,
                   [plates[n] for n in numbers], print_settings)
 
