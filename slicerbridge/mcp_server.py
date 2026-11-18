@@ -46,6 +46,7 @@ mcp = MCPServer("slicerbridge", instructions=(
     "multicolor printer (Bambu Lab, Creality, Elegoo, Anycubic, Flashforge, QIDI, WonderMaker, Prusa, Snapmaker U1). "
     "Start with inspect_model to see the colors a model uses and how it fits each bed, then convert_model. "
     "A file SlicerBridge wrote can go back in for another printer. PrusaSlicer projects aren't read yet. "
+    "For one-layer lines of stray color in a painted model, despeckle_paint merges its tiny paint islands. "
     "A file that fails a check is never written; the result says why. Paths are on the user's machine."))
 
 PRINTERS = Annotated[str, Field(description=(
@@ -147,6 +148,28 @@ def verify_files(paths: PATHS,
                       "slicer makes of it.", annotations=READS)
 def brand_check(paths: PATHS, printers: PRINTERS = "all") -> str:
     return _run("brand-check", *map(_path, paths), "--printers", printers)
+
+
+@mcp.tool(description="Clean the paint of a painted multicolor .3mf: every same-color island smaller than "
+                      "min_area_mm2 takes the color of the neighbor it shares the longest edge with. Specks like "
+                      "these (a model painted from a textured OBJ has thousands) print as one-layer lines of "
+                      "stray color. Writes a new file, '<name> - despeckled.3mf' beside the model unless out_path "
+                      "says otherwise; the model itself is never changed. Reports the islands found, the "
+                      "triangles recolored and which filament went to which. A thin streak under the threshold "
+                      "goes too: lower it to keep fine detail.", annotations=WRITES)
+def despeckle_paint(model_path: Annotated[str, Field(description="Path to the painted .3mf.")],
+                    min_area_mm2: Annotated[float, Field(description="Islands smaller than this, in mm² as placed "
+                                                                     "on the plate, are merged.", gt=0)] = 1.0,
+                    out_path: Annotated[str, Field(description="The .3mf to write, or a folder for it; default: "
+                                                               "'<name> - despeckled.3mf' beside the model.")] = "",
+                    dry_run: Annotated[bool, Field(description="Only report what would change; write "
+                                                               "nothing.")] = False) -> str:
+    argv = ["despeckle", _path(model_path), "--min-area", f"{min_area_mm2:g}"]
+    if out_path:
+        argv += ["--out", _path(out_path)]
+    if dry_run:
+        argv.append("--dry-run")
+    return _run(*argv)
 
 
 @mcp.tool(description="Which slicers SlicerBridge finds, their versions, and where it keeps its templates.", annotations=READS)

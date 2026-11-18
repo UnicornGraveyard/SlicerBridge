@@ -61,6 +61,7 @@ claude mcp add slicerbridge -- uvx slicerbridge mcp
 | `convert_model` | A checked file per printer into `<out_dir>/<name>/` | yes |
 | `verify_files` | Re-run the checks on written files, optionally slicing them | no |
 | `brand_check` | Slice files in their makers' own slicers | no |
+| `despeckle_paint` | Merge a painted model's paint islands under 1 mm² into their neighbors' color, into a new file | yes |
 | `doctor` | Which slicers are installed, their versions, the cache | no |
 
 Conversions with slicing take a minute or two per printer. Ask for a few printers at a time, or convert without

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `slicerbridge despeckle` (and the MCP server's `despeckle_paint`) cleans a painted model's paint. Every
+  same-color island under 1 mm² (`--min-area`) takes the color of the neighbor it shares the longest edge with,
+  and the result goes to a new file, `<model> - despeckled.3mf`. A model painted from a textured OBJ carries
+  thousands of these specks: texture edges rounded to the nearest filament. A slice plane that cuts one prints a
+  single layer of its color. On a 1.6 million triangle model with 3,802 islands it recolored 24,439 triangles
+  (1.5%, 687 mm²) in 9 seconds. The script it grew from recolors the same triangles but 18, and cut that model's
+  visible one-layer color patches in Bambu Studio 2.9.1's command line from 449 to 203, those from stray paint
+  from 200 to 6 (2026-11-17). Each triangle counts as the color over most of its area, an unpainted one as its
+  part's filament. An edge to another island counts a hundredth, so specks go to the big regions around them.
+  Only the recolored triangles change, each to one unsplit leaf of its new color: every other byte of the model,
+  and every other entry of the 3MF, stays as it was. A filament left painted nowhere is named. Thin streaks
+  painted on purpose lose fragments under the threshold: lower it to keep them. Reads Bambu Studio's and its
+  forks' `paint_color` and PrusaSlicer's `mmu_segmentation`.
+
 ## 0.5.0 (2026-11-10)
 
 - A Prusa printer's profiles are rebuilt when PrusaSlicer is updated, as the Bambu and OrcaSlicer-family

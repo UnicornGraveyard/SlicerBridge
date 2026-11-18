@@ -138,3 +138,80 @@ def bambu_project(path: Path, *, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6
                    '<?xml version="1.0" encoding="UTF-8"?>\n<config><header><header_item key="X-BBL-Client-Type" '
                    f'value="slicer"/>{version}</header></config>')
     return path
+
+
+def _grid(art: str, cell: float, codes: dict | None, attr: str) -> tuple[str, str]:
+    """(vertices, triangles) XML for a flat grid of square cells, two triangles each, painted per `art`."""
+    rows = [r for r in (line.strip() for line in art.strip().splitlines()) if r]
+    h, w = len(rows), len(rows[0])
+    assert all(len(r) == w for r in rows), "every row of the art is as long"
+    vx = "".join(f'<vertex x="{i * cell:g}" y="{(h - j) * cell:g}" z="0"/>' for j in range(h + 1) for i in range(w + 1))
+    tris = []
+    for r, row in enumerate(rows):
+        for c, ch in enumerate(row):
+            a, b = r * (w + 1) + c, r * (w + 1) + c + 1
+            d, e = a + w + 1, b + w + 1
+            for half, (p, q, s) in enumerate(((a, d, e), (a, e, b))):
+                code = (codes or {}).get((r, c, half)) or ("" if ch == "." else leaf(int(ch)))
+                tris.append(f'<triangle v1="{p}" v2="{q}" v3="{s}"' + (f' {attr}="{code}"' if code else "") + "/>")
+    return vx, "".join(tris)
+
+
+def _rezip(path: Path, entries: dict) -> None:
+    with zipfile.ZipFile(path) as z:
+        old = {i.filename: z.read(i.filename) for i in z.infolist()}
+    old.update(entries)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in old.items():
+            z.writestr(name, data)
+
+
+def painted_grid(path: Path, art: str, *, cell: float = 0.5, codes: dict | None = None, scale: float = 1.0,
+                 extruder: int = 1, palette=("#161616", "#CBC6B8", "#DE4343", "#5B6579", "#2E8B57", "#FFFFFF")) -> Path:
+    """A Bambu Studio project whose one part is a flat grid of square cells (`cell` mm a side), each two
+    triangles painted per `art`: a line of characters per row, a digit the filament, "." unpainted (the
+    part prints in `extruder`). `codes` gives one triangle its own paint string: {(row, column, 0 or 1): code}.
+    The object is placed at `scale`."""
+    bambu_project(path, plates=1, paint={}, extruder=extruder, palette=palette)
+    vx, tris = _grid(art, cell, codes, "paint_color")
+    objects_model = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xmlns="{CORE}" '
+                     f'xmlns:p="{PROD}" requiredextensions="p"><resources><object id="1" type="model"><mesh>'
+                     f'<vertices>{vx}</vertices><triangles>{tris}</triangles></mesh></object></resources>'
+                     f'<build/></model>')
+    with zipfile.ZipFile(path) as z:
+        root = z.read("3D/3dmodel.model").decode()
+    root = root.replace('<item objectid="2" transform="1 0 0 0 1 0 0 0 1 ',
+                        f'<item objectid="2" transform="{scale:g} 0 0 0 {scale:g} 0 0 0 {scale:g} ')
+    _rezip(path, {"3D/Objects/object_1.model": objects_model, "3D/3dmodel.model": root})
+    return path
+
+
+def prusa_grid(path: Path, art: str, *, cell: float = 0.5, extruder: int = 1,
+               colors=("#161616", "#CBC6B8", "#DE4343", "#5B6579")) -> Path:
+    """The same grid as a PrusaSlicer project: the mesh in the root model, paint as
+    slic3rpe:mmu_segmentation, the volume's extruder in Slic3r_PE_model.config."""
+    vx, tris = _grid(art, cell, None, "slic3rpe:mmu_segmentation")
+    n = tris.count("<triangle ")
+    root = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="{CORE}" '
+            f'xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"><metadata name="slic3rpe:Version3mf">1</metadata>'
+            f'<resources><object id="1" type="model"><mesh><vertices>{vx}</vertices><triangles>{tris}</triangles>'
+            f'</mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0" '
+            f'printable="1"/></build></model>')
+    model_config = ('<?xml version="1.0" encoding="UTF-8"?>\n<config><object id="1" instances_count="1">'
+                    '<metadata type="object" key="name" value="grid"/>'
+                    f'<metadata type="object" key="extruder" value="{extruder}"/>'
+                    f'<volume firstid="0" lastid="{n - 1}"><metadata type="volume" key="name" value="grid"/>'
+                    '<metadata type="volume" key="extruder" value="0"/></volume></object></config>')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.'
+                   'openxmlformats.org/package/2006/content-types"><Default Extension="model" ContentType="'
+                   'application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>')
+        z.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.'
+                   'openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" '
+                   'Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
+        z.writestr("3D/3dmodel.model", root)
+        z.writestr("Metadata/Slic3r_PE.config", f"; generated by PrusaSlicer 2.9.6\n\n; extruder_colour = {';'.join(colors)}\n"
+                                                f"; filament_colour = {';'.join(colors)}\n")
+        z.writestr("Metadata/Slic3r_PE_model.config", model_config)
+    return path

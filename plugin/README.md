@@ -9,7 +9,8 @@ were painted, carries that printer's own settings and your print settings, keeps
 heavier prime tower when it's tall. A file that fails a check is never written.
 
 This plugin gives Claude SlicerBridge's tools and a skill for using them: inspect a model, convert it for the
-printers you name, re-check or slice the files, and slice them in each maker's own slicer.
+printers you name, re-check or slice the files, and slice them in each maker's own slicer. A second
+skill cleans a painted model's paint specks, the cause of one-layer lines of stray color.
 
 ## Requirements
 
