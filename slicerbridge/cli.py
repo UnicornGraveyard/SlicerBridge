@@ -12,6 +12,7 @@ Anycubic Slicer Next, Flash Studio, QIDI Studio), including any file SlicerBridg
     slicerbridge printers                                  # every printer, its engine and slicer
     slicerbridge verify "out/My Model" --source model.3mf --slice
     slicerbridge brand-check "out/My Model"                # slice each file in its brand's own slicer
+    slicerbridge despeckle model.3mf                       # merge paint islands under 1 mm2 into their neighbors
     slicerbridge templates --refresh --printers all        # after updating a slicer
     slicerbridge doctor                                    # what's installed, where things are kept
     slicerbridge mcp                                       # the MCP server, for AI assistants
@@ -234,6 +235,31 @@ def cmd_brand_check(a: argparse.Namespace) -> int:
     return 1 if bad else 0
 
 
+def cmd_despeckle(a: argparse.Namespace) -> int:
+    from . import despeckle
+    src = _abs(a.model)
+    if src.suffix.lower() != ".3mf" or not src.is_file():
+        raise SystemExit(f"!! not a .3mf file: {src}")
+    dst = None
+    if not a.dry_run:
+        dst = _abs(a.out) if a.out else src.parent
+        if dst.is_dir():
+            dst = dst / f"{src.stem} - despeckled.3mf"
+        elif dst.suffix.lower() != ".3mf":
+            raise SystemExit(f"!! --out is a .3mf file or a folder, not {dst}")
+    r = despeckle.despeckle(src, dst, a.min_area)
+    print(src.name)
+    for line in despeckle.report(r):
+        print(f"  {line}")
+    if r.written:
+        print(f"  wrote     : {r.written}")
+    elif dst is None:
+        print("  dry run   : nothing written")
+    else:
+        print("  nothing to change: no file written")
+    return 0
+
+
 def cmd_templates(a: argparse.Namespace) -> int:
     from . import templates
     keys = select(a.printers, default="all")
@@ -361,6 +387,14 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("paths", nargs="+", help=".3mf files or folders")
     b.add_argument("--printers", "-p", **which)
     b.set_defaults(run=cmd_brand_check)
+
+    s = sub.add_parser("despeckle", help="merge paint islands too small to print into the color around them")
+    s.add_argument("model", help="a painted multicolor .3mf (Bambu Studio, OrcaSlicer, a fork of either, or PrusaSlicer)")
+    s.add_argument("--min-area", type=float, default=1.0, metavar="MM2",
+                   help="same-color islands smaller than this, in mm2 on the plate, take a neighbor's color (default: 1)")
+    s.add_argument("--out", "-o", help='the file to write, or a folder for it (default: "<model> - despeckled.3mf" beside it)')
+    s.add_argument("--dry-run", action="store_true", help="report the islands and what would change, and write nothing")
+    s.set_defaults(run=cmd_despeckle)
 
     t = sub.add_parser("templates", help="build each printer's settings from its slicer")
     t.add_argument("--refresh", action="store_true", help="rebuild even if built")

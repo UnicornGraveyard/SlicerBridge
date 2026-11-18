@@ -162,6 +162,22 @@ slicerbridge brand-check "out/My Model"              # slice each file in its ma
 `--printers` takes `all`, `popular`, a vendor (`bambu`, `creality`, `elegoo`, `anycubic`, `flashforge`, `qidi`,
 `wondermaker`, `prusa`, `snapmaker`), or printer keys, comma-separated.
 
+### One-layer lines of stray color: despeckle
+
+A model painted from a textured OBJ carries thousands of paint specks, each under a square millimetre: texture
+edges rounded to the nearest filament. Where a layer's slice plane cuts one, the slicer prints that color for one
+layer. `despeckle` merges every same-color island under 1 mm² into the neighbor it shares the longest edge with,
+and writes a new file beside the model.
+
+```bash
+slicerbridge despeckle model.3mf --dry-run           # count the islands, write nothing
+slicerbridge despeckle model.3mf                     # model - despeckled.3mf
+slicerbridge despeckle model.3mf --min-area 0.5      # keep islands from 0.5 mm² up
+```
+
+Only the recolored triangles change. A thin streak painted on purpose can lose fragments under the threshold:
+lower `--min-area` to keep it, and look at the result in your slicer before you print.
+
 ### What it won't do
 
 - **Merge colors.** A model that uses more filaments than a printer holds is refused for that printer. Which two
