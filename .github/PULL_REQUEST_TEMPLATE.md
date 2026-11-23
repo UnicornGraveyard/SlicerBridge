@@ -1,3 +1,7 @@
+## Maintainer Jira reference (optional for outside contributors)
+
+<!-- Maintainers: include the Jira key in the title, link the issue and identify the acceptance criteria. Outside contributors can omit this section. Describe risk and deployment impact when relevant. -->
+
 ## What this changes
 
 ## How it was tested
