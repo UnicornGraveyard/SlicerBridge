@@ -9,7 +9,7 @@ Retarget multicolor slicer projects to supported printers and verify the result.
 - **Contributions.** Keep user models out of attachments and commits. Use synthetic test fixtures. Keep 3MF binaries and slicer profiles out of PRs, and accompany bug fixes with a test that fails against the original behavior.
 - **Delivery.** The v* tag workflow publishes to PyPI. See docs/releasing.md. Leave release tags to the maintainer.
 - **Jira.** Project SB.
-- **Notion.** Canonical project page unconfirmed. Follow the issue’s context link or resolve it with the owner.
+- **Notion.** Open [the SlicerBridge epic (SB-1)](https://ianmacdowell13.atlassian.net/browse/SB-1) and follow its project context link to **SlicerBridge | Project context**. Read any task-specific brief linked from your Jira issue.
 
 ## Portfolio engineering workflow
 
