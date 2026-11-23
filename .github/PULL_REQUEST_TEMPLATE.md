@@ -1,6 +1,6 @@
-## Jira and delivery
+## Maintainer Jira reference (optional for outside contributors)
 
-<!-- Include the Jira key in the title, link the issue, identify the acceptance criteria, and describe risks, deployment and rollback implications. -->
+<!-- Maintainers: include the Jira key in the title, link the issue and identify the acceptance criteria. Outside contributors can omit this section. Describe risk and deployment impact when relevant. -->
 
 ## What this changes
 

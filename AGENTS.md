@@ -6,11 +6,14 @@ Retarget multicolor slicer projects to supported printers and verify the result.
 
 - **Layout.** slicerbridge/ owns engines and checks, tests/ builds synthetic projects, plugin/ contains client integration.
 - **Local setup and validation.** `python3 -m venv .venv` then `.venv/bin/pip install -e ".[dev,mcp]"`. Run `.venv/bin/pytest` and `.venv/bin/ruff check .`. For engines, checks or printer changes run `SLICERBRIDGE_SLICER_TESTS=1 .venv/bin/pytest -m slicer` per CONTRIBUTING.md. Confirm any additional checks for the affected path in existing instructions and CI.
-- **Delivery.** GitHub release workflow. CLI and local MCP server.
+- **Contributions.** Keep user models out of attachments and commits. Use synthetic test fixtures. Keep 3MF binaries and slicer profiles out of PRs, and accompany bug fixes with a test that fails against the original behavior.
+- **Delivery.** The v* tag workflow publishes to PyPI. See docs/releasing.md. Leave release tags to the maintainer.
 - **Jira.** Project SB.
 - **Notion.** Canonical project page unconfirmed. Follow the issue’s context link or resolve it with the owner.
 
 ## Portfolio engineering workflow
+
+The Jira and private Notion steps below apply to portfolio maintainers and their agents. External contributors and dependency bots can use public GitHub issues and the repository’s normal branch, commit and PR conventions. Maintainers handle any internal tracking.
 
 1. **Pick up the issue.** For substantive changes, read the Jira issue, its acceptance criteria, dependencies and linked Notion context. Read this file, applicable directory instructions, contribution notes and the affected implementation before editing. Confirm the intended outcome with the owner if requirements are missing. Keep product strategy, research and durable decisions in Notion, execution status in Jira and implementation history in GitHub.
 2. **Claim a single line of work.** Check Jira status, open PRs, remote branches, `git status --short --branch` and `git worktree list`. Resume the existing issue branch when one exists. Coordinate a single writer per branch. For independent tasks, use separate branches and worktrees. Preserve other contributors’ uncommitted changes.
