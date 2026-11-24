@@ -21,13 +21,6 @@ def test_the_tower_is_brought_up_to_the_minimums_and_no_further():
     assert tall.settings({"wipe_tower_brim_width": "2"}, tall.TOWER["prusa"]) == {"wipe_tower_brim_width": "10"}
 
 
-def test_the_u1_engine_gives_the_same_towers():
-    t = u1.load_template(False)
-    assert u1.TALL_TOWER == tall.settings(t, tall.TOWER["orca"])
-    assert u1.TALL_TOWER_STOCK_RIBS == tall.settings(t, tall.STOCK_RIBS["orca"])
-    assert u1.TALL_TOWER_TIGHT == tall.settings(t, tall.SLOWER["orca"])
-
-
 def test_each_slicer_steps_down_from_the_whole_tower_to_the_slower_one():
     assert [name for name, _r in tall.STEPS["bambu"]] == [
         "heavier prime tower", "heavier prime tower on the printer's own ribs", "slower tower only"]
@@ -51,8 +44,14 @@ def _block(side, height=150.0):
     return orca.Plate(1, lo=[0.0, 0.0, 0.0], hi=[side, side, height])
 
 
+def _orca_bed():
+    """A 270 mm Bambu-format OrcaSlicer bed with a rib tower: the U1's template under another printer's
+    name, since Snapmaker Orca sizes the U1's own tower its own way (checks/u1.py tower_footprint)."""
+    return {**u1.load_template(False), "printer_model": "An OrcaSlicer printer"}
+
+
 def test_the_orca_engine_gives_each_tall_plate_the_heaviest_tower_it_has_room_for():
-    cfg = u1.load_template(False)  # a 270 mm Bambu-format OrcaSlicer bed with a rib tower
+    cfg = _orca_bed()
     (full, _r), (stock, _s), (slower, _t) = tall.STEPS["orca"]
     assert orca.tall_tower("Roomy", [_block(120.0)], cfg, "orca") == (tall.settings(cfg, tall.TOWER["orca"]), full)
     assert orca.tall_tower("Snug", [_block(205.0)], cfg, "orca") == (
@@ -72,7 +71,7 @@ def _tall_file(tmp_path, cfg):
 
 
 def test_check_14_fails_a_tall_file_on_the_light_tower_and_passes_the_heavier(tmp_path):
-    cfg = {**u1.load_template(False), "wipe_tower_x": ["200"], "wipe_tower_y": ["200"]}
+    cfg = {**_orca_bed(), "wipe_tower_x": ["200"], "wipe_tower_y": ["200"]}
     boxes = [(1, (0.0, 0.0, 0.0), (120.0, 120.0, 150.0))]  # the tower spot is well clear of it
     with zipfile.ZipFile(_tall_file(tmp_path, cfg)) as z:
         _info, problems, _w = check.tall_tower(z, cfg, boxes, "orca")

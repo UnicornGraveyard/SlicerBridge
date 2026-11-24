@@ -51,7 +51,7 @@ from .._vendor.panda2prusa.transform import Transform
 from .._vendor.panda2prusa.writer import write_prusa_3mf
 
 from .. import tall
-from ..carry import marked_changed, print_keys
+from ..carry import ORCA_NAME, marked_changed, print_keys
 from ..errors import Refusal
 from ..output import land, partial, withdraw
 from ..printers import (BAMBU_TYPES, PRUSA_PRINTERS as PRINTERS, SLICERS, STAMP, PrusaPrinter as Printer, cache_dir,
@@ -326,7 +326,8 @@ def load_source(slug: str, display: str, path: Path) -> Source:
     marked = marked_changed(ps)
     print_settings = {}
     for k in print_keys(ps):
-        if k not in marked and not translatable(k):
+        name = ORCA_NAME.get(k, k)  # Panda2Prusa translates OrcaSlicer's name for it
+        if k not in marked and not translatable(name):
             continue
         v = ps.get(k)
         if isinstance(v, list):
@@ -334,8 +335,8 @@ def load_source(slug: str, display: str, path: Path) -> Source:
         if v is None:
             continue
         v = str(v)
-        if k in marked or translates(k, v):
-            print_settings[k] = v
+        if k in marked or translates(name, v):
+            print_settings[name] = v
 
     # Bambu Studio's automatic brim is worked out per object (OrcaSlicer's Brim.cpp), and brim_width
     # goes unused. PrusaSlicer has no automatic brim; Panda2Prusa works one out per object, but only for

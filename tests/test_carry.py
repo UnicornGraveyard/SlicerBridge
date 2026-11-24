@@ -146,3 +146,24 @@ def test_the_refused_setting_is_found_in_all_of_prusaslicers_log():
 def test_an_unmarked_value_prusaslicer_has_nothing_for_is_left_out_quietly():
     assert prusa.translates("sparse_infill_density", "35%")
     assert not prusa.translates("support_base_pattern", "default")
+
+
+def test_a_setting_bambu_studio_and_orcaslicer_name_apart_is_carried_under_the_printers_name():
+    src = {"sparse_infill_anchor": "400%", "sparse_infill_anchor_max": "5"}
+    carried, skipped = carry_print_settings(src, {"infill_anchor": "400%", "infill_anchor_max": "20"})
+    assert carried == {"infill_anchor_max": "5"} and skipped == {}
+    # And back: an OrcaSlicer project's, on a Bambu printer.
+    carried, skipped = carry_print_settings({"infill_anchor_max": "5"}, {"sparse_infill_anchor_max": "20"})
+    assert carried == {"sparse_infill_anchor_max": "5"} and skipped == {}
+
+
+def test_the_u1_file_keeps_the_designers_infill_anchor(tmp_path):
+    s = _u1_settings(tmp_path, "Anchored", {"sparse_infill_anchor_max": "5"})
+    assert s["infill_anchor_max"] == "5" and "sparse_infill_anchor_max" not in s
+    assert "infill_anchor_max" in s["different_settings_to_system"][0].split(";")
+
+
+def test_prusa_takes_the_infill_anchor_bambu_studio_names_apart(tmp_path):
+    path = bambu_project(tmp_path / "anchored.3mf", extra_settings={"sparse_infill_anchor_max": "5"})
+    settings = prusa.load_source("anchored", "Anchored", path).print_settings
+    assert settings.get("infill_anchor_max") == "5" and "sparse_infill_anchor_max" not in settings

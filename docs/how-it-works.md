@@ -70,7 +70,11 @@ anything else the source project marks as changed from its preset, speeds and ac
 marks a setting changed against the preset's system parent, so a detached or imported preset marks nothing: the
 settings that shape the print are carried whatever it marks ([carry.py](../slicerbridge/carry.py)). Speeds,
 accelerations and line widths are tuned to the source's printer, and stay the target's unless marked. Prusa files
-take what PrusaSlicer has a setting for, and the Snapmaker U1 the same as the others. Then the target's slicer
+take what PrusaSlicer has a setting for, and the Snapmaker U1 the same as the others. A setting Bambu Studio and
+OrcaSlicer name apart (the infill anchor, `sparse_infill_anchor_max` and `infill_anchor_max`) is carried under the
+target's name. An automatic brim is carried as what it prints: Bambu Studio prints none on an object with
+supports, where OrcaSlicer and Snapmaker Orca print all of it, so an object Bambu Studio would leave without a
+brim gets `no_brim` in their files ([brim.py](../slicerbridge/brim.py)). Then the target's slicer
 reads the whole file back: a carried
 value it doesn't take keeps the printer's own, and the output says so. The U1's file is read back in Snapmaker
 Orca whenever it's installed, sliced or not (a few seconds): a carried setting it won't load keeps the template's.
