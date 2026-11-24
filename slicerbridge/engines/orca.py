@@ -415,9 +415,13 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
 
 # Room kept between the prime tower's brim and the model's outline, tried widest
 # first; and between the brim and the bed's edge, where Bambu Studio checks the
-# tower with more conservative parameters than it slices with.
+# tower with more conservative parameters than it slices with, and where a tower
+# prints wider than its estimate: SoftMaw's QIDI Q2 tower, estimated 49 mm wide,
+# printed 53 (2026-11-24). An automatic brim on the model had kept every tower 7 mm
+# in (bed.edge); at 2 mm, on a file with no brim or skirt, that one's brim ran 2 mm
+# off the bed, which OrcaSlicer's command line sliced and check 13 failed.
 TOWER_CLEARANCES = (10.0, 6.0, 3.0)
-TOWER_EDGE = 2.0
+TOWER_EDGE = 7.0
 # Kept between the tower's brim and an exclusion area: OrcaSlicer refused a Kobra 3
 # tower whose brim stopped short of the bed's 2 mm frame ("too close to exclusion area").
 EXCLUSION_GAP = 3.0

@@ -12,7 +12,11 @@
   room, with the room a carried brim or skirt needs at the bed's edge. SoftMaw's tower lands in a corner the
   outline leaves free, 4 mm inside the bed. Checks 9 and 12 size the tower the same way.
 - Check 13 fails a plate whose sliced prime tower runs off the bed. Snapmaker Orca's command line slices such a
-  tower and exits 0, so `--slice` had passed the file above.
+  tower and exits 0, so `--slice` had passed the file above. OrcaSlicer's does too.
+- A prime tower placed by the model's outline keeps 7 mm between its brim and the bed's edge, where it kept 2.
+  A tower prints a few millimetres wider than its estimate: SoftMaw's QIDI Q2 tower, estimated 49 mm, printed
+  53, and its brim ran 2 mm off the bed. An automatic brim on the model had kept towers 7 mm in until now, so
+  this showed only once a file had no brim or skirt.
 - The infill anchor is carried to every printer. Bambu Studio names it `sparse_infill_anchor_max` and
   `sparse_infill_anchor`, OrcaSlicer `infill_anchor_max` and `infill_anchor`. Carried by name, a 5 mm anchor
   reached only the Bambu printers: the OrcaSlicer-family and U1 files kept their printer's 20 or 40 mm and the

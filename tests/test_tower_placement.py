@@ -98,3 +98,16 @@ def test_snapmaker_orca_builds_the_u1s_tower_from_its_purge_whatever_width_is_se
     w, d, _brim = check.tower_size({**heavy, "wipe_tower_extra_rib_length": "20", "wipe_tower_rib_width": "12",
                                     "filament_colour": ["#000000"] * 3})
     assert 61.1 <= w <= 65.0 and 58.8 <= d <= 64.0
+
+
+def test_a_tower_that_prints_wider_than_its_estimate_stays_on_the_bed():
+    """SoftMaw's QIDI Q2 tower (2026-11-24): estimated 49 mm wide, it printed 53. The model's brim had kept
+    the tower 7 mm inside the bed's edge; with no brim or skirt it was placed 2 mm inside, and its own
+    10 mm brim ran 2 mm off the 270 mm bed."""
+    bed = engine.Bed(0, 0, 270, 270, 250, 45, tower_brim=10, edge=2.0)  # no brim or skirt on the model
+    disc = {(i, j) for i in range(135) for j in range(135)
+            if (2 * i + 1 - 107) ** 2 + (2 * j + 1 - 135) ** 2 <= 100 ** 2}  # a round model at the left edge
+    tx, ty = engine.tower_spot(disc, bed, 49, 49, (107, 135))
+    grew, brim = 4, 10
+    assert tx - brim >= 0 and ty - brim >= 0
+    assert tx + 49 + grew + brim <= 270 and ty + 49 + grew + brim <= 270
