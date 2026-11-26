@@ -48,6 +48,7 @@ from .._vendor.panda2prusa.convert import describe, used_filaments
 from .._vendor.panda2prusa.paint import transform_states
 from .._vendor.panda2prusa.transform import Transform
 
+from .. import brim as model_brim
 from .. import tall
 from .. import templates as templates_build
 from ..carry import carry_print_settings, marked_changed, skipped_note
@@ -414,9 +415,13 @@ def place(slug: str, plate: Plate, count: int, bed: Bed, tw: float = 0.0, td: fl
 
 # Room kept between the prime tower's brim and the model's outline, tried widest
 # first; and between the brim and the bed's edge, where Bambu Studio checks the
-# tower with more conservative parameters than it slices with.
+# tower with more conservative parameters than it slices with, and where a tower
+# prints wider than its estimate: SoftMaw's QIDI Q2 tower, estimated 49 mm wide,
+# printed 53 (2026-11-24). An automatic brim on the model had kept every tower 7 mm
+# in (bed.edge); at 2 mm, on a file with no brim or skirt, that one's brim ran 2 mm
+# off the bed, which OrcaSlicer's command line sliced and check 13 failed.
 TOWER_CLEARANCES = (10.0, 6.0, 3.0)
-TOWER_EDGE = 2.0
+TOWER_EDGE = 7.0
 # Kept between the tower's brim and an exclusion area: OrcaSlicer refused a Kobra 3
 # tower whose brim stopped short of the bed's 2 mm frame ("too close to exclusion area").
 EXCLUSION_GAP = 3.0
@@ -1049,8 +1054,11 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         raise Refusal(f"no Application stamp in the {key} template -- run slicerbridge templates --refresh")
 
     carried, skipped = carry_print_settings(m.src_cfg, base)
+    brim_whole, brim_objects = False, set()
     if printer.slicer == "orca":
-        carried = in_orcaslicer_terms(carried, base)
+        # An automatic brim Bambu Studio leaves out, OrcaSlicer would print (brim.py).
+        brim_whole, brim_objects = model_brim.left_out(m.src, m.src_cfg)
+        carried = in_orcaslicer_terms(model_brim.carried(carried, base, brim_whole), base)
     # The prime tower's likely size, from the settings the file will have.
     likely = {**base, **carried, "filament_colour": [f["color"] for f in m.ordered],
               "flush_volumes_matrix": flush_matrix(m.src_cfg, m.used, base)}
@@ -1087,9 +1095,9 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
 
         with zipfile.ZipFile(m.src) as zin, zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
             zout.comment = STAMP
-            model_settings = remap_model_settings(
+            model_settings = model_brim.on_objects(remap_model_settings(
                 zin.read("Metadata/model_settings.config").decode(), m.mapping, m.used,
-                settings.get("filament_map")).encode()
+                settings.get("filament_map")), brim_objects).encode()
             root_model = retransform_items(zin.read(ROOT_MODEL).decode(), transforms)
             root_model = re.sub(r'(<metadata name="Application">)[^<]*(</metadata>)',
                                 lambda x: x.group(1) + application.group(1) + x.group(2), root_model).encode()
@@ -1158,6 +1166,8 @@ def write(m: Model, key: str, slice_it: bool, out: Path, prefix: str = "", suffi
         print("       kept the printer's own " + "; ".join(f"{k} ({why})" for k, why in dropped.items()))
     if skipped:
         print(f"       not carried: {skipped_note(skipped)}")
+    if model_brim.note(brim_whole, brim_objects):
+        print(f"       {model_brim.note(brim_whole, brim_objects)}")
     if tallest > tall.TALL_PRINT_MM and bed.tower is not None:
         got = {k: v for k, v in tower_extra.items() if k not in dropped}
         print(f"       {tall.say(tower_step, tallest, got)}")

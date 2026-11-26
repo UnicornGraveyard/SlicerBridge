@@ -10,11 +10,11 @@ from slicerbridge.checks import orca as check
 from slicerbridge.engines import u1 as engine
 
 
-def _gcode(tower_at, time="1h 10m 5s", grams="12.5"):
-    """One plate's G-code: 3 mm of model, 1.5 mm of prime tower at `tower_at`, two tools."""
+def _gcode(tower_at, time="1h 10m 5s", grams="12.5", reach=10.0):
+    """One plate's G-code: 3 mm of model, 1.5 mm of prime tower `reach` mm wide at `tower_at`, two tools."""
     x, y = tower_at
     return (f"; HEADER_BLOCK_START\n; model printing time: 1h 2m; total estimated time: 1h 10m\nM83\nT0\n"
-            f";TYPE:Outer wall\nG1 X10 Y10 E2.5\n;TYPE:Prime tower\nG1 X{x} Y{y} E1\nG1 X{x + 10} Y{y} E0.5\n"
+            f";TYPE:Outer wall\nG1 X10 Y10 E2.5\n;TYPE:Prime tower\nG1 X{x} Y{y} E1\nG1 X{x + reach} Y{y} E0.5\n"
             f"G1 E-0.8\nT1\n;TYPE:Inner wall\nG1 X12 Y12 E0.5\n"
             f"; estimated printing time (normal mode) = {time}\n; total filament used [g] = {grams}\n")
 
@@ -49,12 +49,12 @@ def snapmaker(tmp_path, monkeypatch):
         if not slicing:
             return check.subprocess.CompletedProcess(cmd, 0, "", "")
         for n, (x, y) in enumerate(zip(cfg["wipe_tower_x"], cfg["wipe_tower_y"]), start=1):
-            (check.Path(out) / f"plate_{n}.gcode").write_text(_gcode((float(x), float(y))))
+            (check.Path(out) / f"plate_{n}.gcode").write_text(_gcode((float(x), float(y)), reach=fake.reach))
         return check.subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(check, "run_slicer", run)
     monkeypatch.setattr(engine, "run_slicer", run)
-    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "noise": 0, "app": app,
+    fake = type("Fake", (), {"runs": runs, "fails": False, "crashes": False, "refuses": {}, "noise": 0, "app": app, "reach": 10.0,
                              "slices": lambda: [c for c in runs if "--slice" in c],
                              "read_backs": lambda: [c for c in runs if "--export-3mf" in c]})
     return fake
@@ -86,6 +86,15 @@ def test_a_u1_file_snapmaker_orca_wont_slice_isnt_written(project, tmp_path, sna
     snapmaker.fails = True
     assert engine.convert(project, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (0, 1)
     assert "Snapmaker Orca didn't slice it" in capsys.readouterr().out
+    assert not list((tmp_path / "out" / "Cube").glob("*.3mf"))
+
+
+def test_a_tower_snapmaker_orca_prints_off_the_bed_fails_check_13(project, tmp_path, snapmaker, capsys):
+    # Snapmaker Orca's command line slices a tower that runs off the bed and exits 0; its app calls the
+    # tower's spot invalid and won't slice (SoftMaw's ran 6 mm past the U1's 270 mm bed, 2026-11-24).
+    snapmaker.reach = 200.0
+    assert engine.convert(project, "Cube", ["u1"], tmp_path / "out", slice_it=True) == (0, 1)
+    assert "runs off the bed" in capsys.readouterr().out
     assert not list((tmp_path / "out" / "Cube").glob("*.3mf"))
 
 

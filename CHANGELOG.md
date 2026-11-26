@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- The Snapmaker U1's prime tower is placed at the size Snapmaker Orca prints it. Snapmaker Orca builds the U1's
+  tower about square from the purge it holds, whatever `prime_tower_width` says, and the U1 engine had placed it
+  as 30 x 40 mm: SoftMaw's (4 colors, 204 mm of model across the 270 mm bed) printed 47 x 56 mm inside its brim
+  and ran 6 mm off the bed, so Snapmaker Orca's app called the tower's spot invalid and wouldn't slice. With the
+  tall print's wider brim and spacing it ran 21 mm off. The size is measured now (`checks/u1.py`
+  `tower_footprint()`, seven slices in Snapmaker Orca 2.4.1, never short), and the U1's file is placed by the
+  orca engine's own placement: the tower in the strip beside the model, or where the model's outline leaves
+  room, with the room a carried brim or skirt needs at the bed's edge. SoftMaw's tower lands in a corner the
+  outline leaves free, 4 mm inside the bed. Checks 9 and 12 size the tower the same way.
+- Check 13 fails a plate whose sliced prime tower runs off the bed. Snapmaker Orca's command line slices such a
+  tower and exits 0, so `--slice` had passed the file above. OrcaSlicer's does too.
+- A prime tower placed by the model's outline keeps 7 mm between its brim and the bed's edge, where it kept 2.
+  A tower prints a few millimetres wider than its estimate: SoftMaw's QIDI Q2 tower, estimated 49 mm, printed
+  53, and its brim ran 2 mm off the bed. An automatic brim on the model had kept towers 7 mm in until now, so
+  this showed only once a file had no brim or skirt.
+- The infill anchor is carried to every printer. Bambu Studio names it `sparse_infill_anchor_max` and
+  `sparse_infill_anchor`, OrcaSlicer `infill_anchor_max` and `infill_anchor`. Carried by name, a 5 mm anchor
+  reached only the Bambu printers: the OrcaSlicer-family and U1 files kept their printer's 20 or 40 mm and the
+  Prusa files 12. It's carried under the target's name now, and an OrcaSlicer project's the other way.
+- An automatic brim Bambu Studio leaves out is `no_brim` in the OrcaSlicer-family and U1 files. Bambu Studio
+  prints no automatic brim on an object with supports, where OrcaSlicer 2.4.2 and Snapmaker Orca 2.4.1 print all
+  of it: SoftMaw printed none in Bambu Studio 2.8.2 and 11 mm in both, into the bed's edge. Each object's is
+  worked out as the Prusa files' already is. The whole project gets `no_brim` when that's every object, else the
+  object alone; one Bambu Studio does brim keeps `auto_brim`, which the target works out the same way. Only for
+  a Bambu printer's project: another slicer's automatic brim is its own.
 - `slicerbridge despeckle` (and the MCP server's `despeckle_paint`) cleans a painted model's paint. Every
   same-color island under 1 mm² (`--min-area`) takes the color of the neighbor it shares the longest edge with,
   and the result goes to a new file, `<model> - despeckled.3mf`. A model painted from a textured OBJ carries

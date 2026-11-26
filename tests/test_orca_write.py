@@ -11,6 +11,7 @@ import pytest
 
 from builders import bambu_project
 from slicerbridge import printers, tall, templates
+from slicerbridge._vendor.panda2prusa import autobrim
 from slicerbridge.checks import orca as check
 from slicerbridge.engines import orca, u1
 
@@ -33,7 +34,9 @@ def slicer(tmp_path, monkeypatch):
     filament_keys = sorted(k for k, v in source.items() if k.startswith("filament_") and isinstance(v, list)
                            and len(v) == n)
     tpl = {k: [v[0]] if k in filament_keys else v for k, v in source.items()}
-    tpl.update({"printer_settings_id": p.machine, "print_settings_id": p.process, "filament_type": ["PLA"],
+    # KEY's, not the U1's: Snapmaker Orca sizes the U1's own tower its own way (checks/u1.py tower_footprint).
+    tpl.update({"printer_model": p.label,
+                "printer_settings_id": p.machine, "print_settings_id": p.process, "filament_type": ["PLA"],
                 "filament_settings_id": [p.filaments["PLA"]], "inherits_group": ["", "", ""],
                 "different_settings_to_system": ["", "", ""]})
     root = tmp_path / "templates"
@@ -185,3 +188,14 @@ def test_an_orca_printer_that_fails_mid_write_leaves_no_partial_file(tmp_path, s
     src = bambu_project(tmp_path / "cube.3mf", plates=1)
     assert orca.convert(src, "Cube", [KEY], tmp_path / "out") == (0, 1)
     assert not list((tmp_path / "out" / "Cube").glob("*.3mf"))
+
+
+def test_an_automatic_brim_bambu_studio_leaves_out_is_no_brim_in_orcaslicer(tmp_path, slicer, monkeypatch, capsys):
+    # SoftMaw's K2 Plus file: OrcaSlicer 2.4.2 printed all 11 mm of the automatic brim Bambu Studio leaves
+    # out of a print with supports, as Snapmaker Orca did on the U1 (2026-11-24).
+    monkeypatch.setattr(autobrim, "brim_width", lambda *args, **kwargs: 11.0)
+    made, f = _convert(tmp_path, 40.0, brim_type="auto_brim", brim_width="5", enable_support="1")
+    assert made == (1, 0)
+    got = _settings(f)
+    assert got["brim_type"] == "no_brim" and "brim_type" in got["different_settings_to_system"][0].split(";")
+    assert "no brim: Bambu Studio's automatic brim" in capsys.readouterr().out

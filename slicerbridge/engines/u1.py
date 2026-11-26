@@ -16,16 +16,18 @@ Size: never changed. Bambu plates are laid out for the source printer's bed (a
 330 mm H2C, a 256 mm P2S), and Snapmaker Orca lays them out again for the U1's
 270 mm one, so each plate is moved onto its own U1 plate -- turned 90 degrees
 only if that is what makes it fit. The U1 prints a prime tower, so the model goes
-to one edge and the tower into the space left. A model bigger than the bed is
-centered on its plate at full size, with a warning and the scale that would
-fit: scaling it is the call of whoever prints it, in Snapmaker Orca.
+to one edge and the tower into the space left: the strip beside it, or where its
+outline leaves room. A model bigger than the bed is centered on its plate at full
+size, with a warning and the scale that would fit: scaling it is the call of
+whoever prints it, in Snapmaker Orca. Placed as every other printer's file is, by
+the orca engine (place_all), with the tower at the size Snapmaker Orca prints it
+(checks/u1.py tower_footprint): placed as 30 x 40 mm, SoftMaw's ran off the bed.
 
-Prime tower: the U1 template's, except on a model taller than TALL_PRINT_MM.
-That one gets TALL_TOWER, a heavier tower built for the height, if the strip
-left for the tower holds its wider base; else TALL_TOWER_STOCK_RIBS, the same on
-the template's ribs, if the strip holds that; else TALL_TOWER_TIGHT, and a
+Prime tower: the U1 template's, except on a model taller than tall.TALL_PRINT_MM.
+That one gets the heaviest of tall.py's steps its plates have room for: the whole
+heavier tower; else the same on the template's ribs; else the template's, and a
 warning to slice it in Snapmaker Orca and look. The same steps as every other
-printer's (tall.py).
+printer's.
 
 Every file passes checks/u1.py's audit before it is written, and with --slice
 Snapmaker Orca slices it (checks/orca.py's check 13) or it isn't written.
@@ -41,15 +43,12 @@ import subprocess
 import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .._vendor.panda2prusa import ns
-from .._vendor.panda2prusa.convert import describe, used_filaments
 from .._vendor.panda2prusa.paint import transform_states
-from .._vendor.panda2prusa.transform import Transform
 
+from .. import brim as model_brim
 from .. import tall
 from .. import templates as templates_build
 from ..carry import carry_print_settings, skipped_note
@@ -59,6 +58,7 @@ from ..output import land, partial, withdraw
 from ..printers import (SLICERS, STAMP, U1_LABEL, ensure_installed, not_found, out_path as named_path, refused_settings,
                         run_slicer)
 from ..source import palette
+from . import orca as orca_engine
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "u1"  # bl2u1's U1 templates (GPLv3)
 TARGET_FILAMENTS = 4
@@ -99,47 +99,7 @@ FILAMENT_META = re.compile(r'(key="(?:extruder|[a-z_]+_filament)" value=")(\d+)(
 LAYER_RANGE_EXTRUDER = re.compile(r'(<option opt_key="extruder">)(\d+)(</option>)')
 ITEM = re.compile(r'<item\b[^>]*>')
 
-# Bambu Studio and its forks (Orca, Snapmaker Orca) lay plates out in a grid,
-# each plate one bed plus a fifth of a bed apart (PartPlate's LOGICAL_PART_PLATE_GAP).
-PLATE_STRIDE = 1.2
-EPS = 1e-4                 # mm of tolerance on bed edges
-TOWER_DEPTH_GUESS = 40.0   # mm; the slicer sizes the prime tower from the purges
-
-# Tall prints get a heavier prime tower. The tower climbs as long as tools swap,
-# and a face-up wall mount swaps tools nearly to its top: Gatefang is 200 mm tall
-# with three swaps a layer to about 176 mm. U1 users reported its tower knocked
-# off around layer 665 (2026-10-28). The file they printed, GateFang_SnamakerU1.3mf
-# (0.16 mm layers, so about 107 mm up), had a far lighter tower than the template:
-# prime volume 10, ribs +3 mm x 3 mm, no fillet. The template's tower (prime volume
-# 45, ribs +8 mm x 8 mm, fillet) is bigger but unproven at 200 mm, so tall files
-# also get the levers Snapmaker's U1 guide names for a collapsing tower: a wider
-# brim, longer and wider ribs, wider purge line spacing. The slower tower makes a
-# nozzle that catches it hit softer. A starting point, not yet proven on a print.
-# checks/u1.py check 12 holds every tall file whose tower spot has room to at least these.
-TALL_PRINT_MM = 100.0
-TALL_TOWER = {
-    "prime_tower_brim_width": "10",
-    "wipe_tower_extra_rib_length": "20",
-    "wipe_tower_rib_width": "12",
-    "wipe_tower_extra_spacing": "150%",
-    "wipe_tower_max_purge_speed": "60",
-}
-# A strip that can't hold the longer ribs may still hold the wider brim: the rest of
-# the tower on the template's ribs, since the ribs are what reach furthest.
-TALL_TOWER_STOCK_RIBS = {k: v for k, v in TALL_TOWER.items()
-                         if k not in ("wipe_tower_extra_rib_length", "wipe_tower_rib_width")}
-# A tall model whose tower strip can't hold either keeps the template's base and
-# gets only what costs no room: the slower tower.
-TALL_TOWER_TIGHT = {"wipe_tower_max_purge_speed": TALL_TOWER["wipe_tower_max_purge_speed"]}
-
 ROOT_MODEL = "3D/3dmodel.model"
-CORE_OBJECT = ns.q(ns.CORE, "object")
-CORE_MESH = ns.q(ns.CORE, "mesh")
-CORE_VERTICES = ns.q(ns.CORE, "vertices")
-CORE_VERTEX = ns.q(ns.CORE, "vertex")
-CORE_COMPONENTS = ns.q(ns.CORE, "components")
-CORE_COMPONENT = ns.q(ns.CORE, "component")
-P_PATH = ns.q(ns.PRODUCTION, "path")
 
 
 def load_u1_profiles() -> list[dict]:
@@ -269,226 +229,6 @@ def template_stamp(has_support: bool) -> tuple[str, str]:
     if not app:
         raise Refusal(f"no Application stamp in {template_path(has_support)}")
     return app.group(1), client.group(1) if client else ""
-
-
-@dataclass(frozen=True)
-class Bed:
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-    height: float
-    tower: Optional[float]  # prime tower width, if the profile prints one
-    tower_brim: float = 0.0
-    tower_at: tuple = (0.0, 0.0)  # the profile's own prime tower spot
-    rib_reach: float = 0.0  # how far a rib wall reaches past the tower on each side, at the base
-
-    @classmethod
-    def of(cls, settings: dict) -> "Bed":
-        pts = [tuple(float(c) for c in p.split("x")) for p in settings["printable_area"]]
-        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-        tower = float(settings.get("prime_tower_width") or 30) if settings.get("enable_prime_tower") == "1" else None
-        at = (float((settings.get("wipe_tower_x") or ["0"])[0]), float((settings.get("wipe_tower_y") or ["0"])[0]))
-        return cls(min(xs), min(ys), max(xs), max(ys), float(settings["printable_height"]), tower,
-                   float(settings.get("prime_tower_brim_width") or 0), at, rib_reach(settings))
-
-    @property
-    def width(self) -> float:
-        return self.x1 - self.x0
-
-    @property
-    def depth(self) -> float:
-        return self.y1 - self.y0
-
-
-def rib_reach(settings: dict) -> float:
-    """How far past the tower's sides a rib wall reaches, at the base.
-
-    The ribs run along the tower's diagonals and pass each corner by about half
-    the extra rib length, plus half the rib width. They taper to nothing at the
-    top, so the first layer is the widest. Only slicing knows it exactly.
-    """
-    if settings.get("enable_prime_tower") != "1" or settings.get("wipe_tower_wall_type") != "rib":
-        return 0.0
-    extra = float(settings.get("wipe_tower_extra_rib_length") or 0)
-    width = float(settings.get("wipe_tower_rib_width") or 0)
-    return max(0.0, (extra + width) / (2 * math.sqrt(2)))
-
-
-def plate_origin(index: int, count: int, bed: Bed) -> tuple[float, float]:
-    """Where plate `index` (0-based) of `count` sits, as Bambu's PartPlateList lays them out."""
-    v = math.sqrt(count)
-    cols = round(v) + 1 if v > round(v) else round(v)
-    row, col = divmod(index, cols)
-    return col * bed.width * PLATE_STRIDE, -row * bed.depth * PLATE_STRIDE
-
-
-# ------------------------------------------------------------- geometry ----
-
-@dataclass
-class Plate:
-    number: int                                   # Bambu's plater_id, 1-based
-    items: list = field(default_factory=list)     # (object id, 3MF transform string)
-    lo: list = field(default_factory=lambda: [math.inf] * 3)
-    hi: list = field(default_factory=lambda: [-math.inf] * 3)
-
-    @property
-    def size(self) -> tuple:
-        return tuple(self.hi[i] - self.lo[i] for i in range(3))
-
-
-def _norm_path(target: str) -> str:
-    if target.startswith("/"):
-        return target.lstrip("/")
-    return posixpath.normpath(posixpath.join("3D", target))
-
-
-def _leaves(objs: dict, key, xf, depth: int = 0):
-    """(leaf key, cumulative transform) for every mesh under a root object."""
-    o = objs.get(key)
-    if o is None or depth > 16:
-        return
-    if o.find(CORE_MESH) is not None:
-        yield key, xf
-    comps = o.find(CORE_COMPONENTS)
-    if comps is not None:
-        for c in comps.findall(CORE_COMPONENT):
-            child = (_norm_path(c.get(P_PATH)) if c.get(P_PATH) else key[0], c.get("objectid"))
-            yield from _leaves(objs, child, Transform.parse(c.get("transform")).compose(xf), depth + 1)
-
-
-def analyze(slug: str, src: Path) -> tuple[list[int], list[Plate]]:
-    """(slots the model paints or assigns, plates with their printed parts' bounding boxes)."""
-    project = describe(str(src))
-    used = used_filaments(project)
-
-    objs = {}
-    for path, tree in [(ROOT_MODEL, project.root_tree), *project.object_trees.items()]:
-        for o in tree.getroot().iter(CORE_OBJECT):
-            objs[(path, o.get("id"))] = o
-
-    numbers = project.plate_ids or [1]
-    plates = {n: Plate(n) for n in numbers}
-    seen = set()
-    for bi in project.build_items:
-        n = project.plate_of_object.get(bi.objectid) if project.plate_ids else 1
-        if n not in plates:
-            raise Refusal(f"REFUSING {slug}: build item for object {bi.objectid} is on no plate")
-        if bi.objectid in seen:
-            raise Refusal(f"REFUSING {slug}: object {bi.objectid} has two build items; not handled here")
-        seen.add(bi.objectid)
-        plate = plates[n]
-        plate.items.append((bi.objectid, bi.transform))
-
-        # Only printed parts sit on the bed: not modifiers, negative parts or blockers.
-        so = project.settings_objects.get(bi.objectid)
-        parts = so.parts if so else []
-        by_id = {p.id: p.subtype for p in parts}
-        leaves = list(_leaves(objs, (ROOT_MODEL, bi.objectid), Transform.parse(bi.transform)))
-        for i, (key, xf) in enumerate(leaves):
-            subtype = by_id.get(key[1]) or (parts[i].subtype if len(parts) == len(leaves) else "normal_part")
-            if subtype != "normal_part":
-                continue
-            m = xf.m
-            lo, hi = plate.lo, plate.hi
-            verts = objs[key].find(CORE_MESH).find(CORE_VERTICES)
-            for v in (verts.iterchildren(CORE_VERTEX) if verts is not None else ()):
-                x, y, z = float(v.get("x")), float(v.get("y")), float(v.get("z"))
-                p = (x * m[0] + y * m[3] + z * m[6] + m[9],
-                     x * m[1] + y * m[4] + z * m[7] + m[10],
-                     x * m[2] + y * m[5] + z * m[8] + m[11])
-                for k in range(3):
-                    if p[k] < lo[k]:
-                        lo[k] = p[k]
-                    if p[k] > hi[k]:
-                        hi[k] = p[k]
-    del project, objs
-    gc.collect()
-    return used, [plates[n] for n in numbers]
-
-
-ROT90 = Transform((0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
-
-
-@dataclass
-class Placement:
-    rotated: bool
-    size: tuple          # footprint and height after the turn
-    transforms: dict     # object id -> new 3MF transform string
-    tower: Optional[tuple]  # prime tower position, plate-local
-    tight: bool = False  # the strip left for the tower is smaller than its likely footprint
-    fits: bool = True
-    max_scale: float = 1.0  # largest scale that would fit, when it doesn't -- for the warning only
-
-
-def fit_scale(size: tuple, bed: Bed) -> tuple[float, bool]:
-    """Largest uniform scale that fits, and whether it needs the 90 degree turn."""
-    plain = min(bed.width / size[0], bed.depth / size[1], bed.height / size[2])
-    turned = min(bed.width / size[1], bed.depth / size[0], bed.height / size[2])
-    return (turned, True) if turned > plain else (plain, False)
-
-
-def orientation(size: tuple, bed: Bed) -> Optional[bool]:
-    """False if it fits as Bambu had it, True if only turned 90 degrees, None if neither."""
-    sx, sy, sz = size
-    for rotated, w, d in ((False, sx, sy), (True, sy, sx)):
-        if w <= bed.width + EPS and d <= bed.depth + EPS and sz <= bed.height + EPS:
-            return rotated
-    return None
-
-
-def place(slug: str, plate: Plate, count: int, bed: Bed) -> Placement:
-    """Move the plate onto its own U1 plate: a turn about Z and a move, never a scale."""
-    if not all(math.isfinite(d) and d > 0 for d in plate.size):
-        raise Refusal(f"REFUSING {slug}: plate {plate.number} has no printed part to place")
-    rotated = orientation(plate.size, bed)
-    fits = rotated is not None
-    rotated = bool(rotated)
-    sx, sy, sz = plate.size
-    w, d = (sy, sx) if rotated else (sx, sy)
-
-    # Where the model goes on its plate. With a prime tower, the model moves to one
-    # edge and the tower goes in the middle of the strip that's left.
-    spare_x, spare_y = bed.width - w, bed.depth - d
-    mid = ((bed.x0 + bed.x1) / 2, (bed.y0 + bed.y1) / 2)
-    tower, tight = None, False
-    if not fits:
-        # Bigger than the bed: centered at full size, as Bambu had it. There's no
-        # strip to give the tower, so it keeps the profile's own spot.
-        center = mid
-        tower = bed.tower_at if bed.tower is not None else None
-    elif bed.tower is None:
-        center = mid
-    else:
-        side = bed.depth if spare_x >= bed.tower + 10 else 0.0
-        if side > spare_y:
-            m = min(5.0, spare_x / 4)
-            center = (bed.x0 + m + w / 2, mid[1])
-            strip = (bed.x0 + m + w, bed.y0, bed.x1, bed.y1)
-        else:
-            m = min(5.0, spare_y / 4)
-            center = (mid[0], bed.y0 + m + d / 2)
-            strip = (bed.x0, bed.y0 + m + d, bed.x1, bed.y1)
-        tx = min(max((strip[0] + strip[2] - bed.tower) / 2, bed.x0), bed.x1 - bed.tower)
-        ty = min(max((strip[1] + strip[3] - TOWER_DEPTH_GUESS) / 2, bed.y0), bed.y1 - TOWER_DEPTH_GUESS)
-        tower = (tx, ty)
-        pad = bed.tower_brim + bed.rib_reach
-        tight = (strip[2] - strip[0] < bed.tower + 2 * pad
-                 or strip[3] - strip[1] < TOWER_DEPTH_GUESS + 2 * pad)
-
-    ox, oy = plate_origin(plate.number - 1, count, bed)
-    pre = ROT90 if rotated else Transform.identity()
-    corners = [pre.apply_point(x, y, z) for x in (plate.lo[0], plate.hi[0])
-               for y in (plate.lo[1], plate.hi[1]) for z in (plate.lo[2], plate.hi[2])]
-    lo = [min(c[i] for c in corners) for i in range(3)]
-    hi = [max(c[i] for c in corners) for i in range(3)]
-    move = pre.compose(Transform((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                                  ox + center[0] - (lo[0] + hi[0]) / 2,
-                                  oy + center[1] - (lo[1] + hi[1]) / 2,
-                                  plate.lo[2] - lo[2])))  # the bottom stays on the bed
-    transforms = {oid: Transform.parse(tr).compose(move).to_string() for oid, tr in plate.items}
-    return Placement(rotated, (w, d, sz), transforms, tower, tight, fits,
-                     1.0 if fits else fit_scale(plate.size, bed)[0])
 
 
 def retransform_items(xml: str, transforms: dict) -> str:
@@ -635,6 +375,19 @@ def slice_check(f: Path) -> orca_check.Slice:
     return result
 
 
+def with_settings(f: Path, changes: dict) -> None:
+    """Rewrite the file `f` with `changes` to its project settings, and everything else as it is."""
+    again = f.with_name(f.name + ".again")
+    with zipfile.ZipFile(f) as zin, zipfile.ZipFile(again, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        zout.comment = zin.comment
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "Metadata/project_settings.config":
+                data = json.dumps({**json.loads(data.decode()), **changes}, indent=4, ensure_ascii=False).encode()
+            zout.writestr(item, data)
+    again.replace(f)
+
+
 def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "", suffix: str = "",
           slice_it: bool = False, refused: Optional[dict] = None) -> Path:
     """Write `slug`'s U1 file into out/<slug>/ and return it; `slug` is the model's display name.
@@ -653,26 +406,29 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
     has_support = str(orig.get("enable_support", "0")) == "1"
     u1 = load_template(has_support)
     application, client_version = template_stamp(has_support)
-    bed = Bed.of(u1)
 
     out_path = named_path(out, slug, "u1", prefix, suffix)
+
+    # The designer's print settings, which the file's room is worked out with: the layer
+    # height sizes the prime tower, the brim and skirt the room kept at the bed's edge.
+    carried, skipped = carry_print_settings(orig, u1)
+    kept = not_carried(carried, u1, refused)
+    carried = {k: v for k, v in carried.items() if k not in kept}
+    # An automatic brim Bambu Studio leaves out, Snapmaker Orca would print (brim.py).
+    brim_whole, brim_objects = model_brim.left_out(src, orig)
+    carried = model_brim.carried(carried, u1, brim_whole)
+    likely = {**u1, **carried}
 
     # Every decision first: nothing is written for a model that would be refused,
     # and an older file SlicerBridge wrote for it doesn't get to stand in for this run.
     try:
-        used, plates = analyze(slug, src)
+        used, plates = orca_engine.analyze(slug, src)
         ordered, mapping = plan(slug, src, used)
         tallest = max(p.size[2] for p in plates)
-        tower_extra: dict = {}
-        tower_step = len(tall.STEPS["orca"]) - 1  # tall.STEPS' index of the tower it gets: the slower one
-        if bed.tower is not None and tallest > TALL_PRINT_MM:
-            tower_extra = TALL_TOWER_TIGHT
-            for i, step in enumerate((TALL_TOWER, TALL_TOWER_STOCK_RIBS)):
-                heavy = Bed.of({**u1, **step})
-                if not any(pl.tight or not pl.fits for pl in (place(slug, p, len(plates), heavy) for p in plates)):
-                    tower_extra, tower_step, bed = step, i, heavy  # placed, and checked for room, with its base
-                    break
-        placements = [place(slug, p, len(plates), bed) for p in plates]
+        # A tall print gets the heaviest tower every plate, placed with that tower's base, has room for.
+        tower_extra, tower_step = orca_engine.tall_tower(slug, plates, likely, "orca")
+        bed = orca_engine.Bed.of({**likely, **tower_extra})
+        placements, _width, _brim = orca_engine.place_all(slug, plates, bed, {**likely, **tower_extra})
     except Refusal:
         withdraw(out_path, "it no longer passes")
         raise
@@ -750,8 +506,8 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         slice_info = ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
         # ---- model_settings.config: extruders follow the mapping --------
-        model_settings = remap_model_settings(
-            zin.read("Metadata/model_settings.config").decode(), mapping, used).encode()
+        model_settings = model_brim.on_objects(remap_model_settings(
+            zin.read("Metadata/model_settings.config").decode(), mapping, used), brim_objects).encode()
 
         # ---- 3D/3dmodel.model: every plate placed on its U1 plate, U1 stamp
         root_model = retransform_items(zin.read(ROOT_MODEL).decode(), transforms)
@@ -760,9 +516,6 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
 
         # ---- project_settings.config: U1 profile + the designer's print settings + our palette
         combined = u1.copy()
-        carried, skipped = carry_print_settings(orig, u1)
-        kept = not_carried(carried, u1, refused)
-        carried = {k: v for k, v in carried.items() if k not in kept}
         combined.update(carried)
         if carried:  # marked as the project's own, as Snapmaker Orca marks a changed setting
             marked = list(combined.get("different_settings_to_system") or [""] * (TARGET_FILAMENTS + 2))
@@ -823,6 +576,15 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
             else:
                 zout.writestr(item, zin.read(item.filename))
 
+    # Check 12 tries the tower at the spot it got; where a heavier step clears there than
+    # placement's estimate allowed, the file gets that step instead, at the same spot.
+    steps = [name for name, _rules in tall.STEPS["orca"]]
+    here = steps.index(tower_step) if tower_step in steps else 0
+    owed = u1check.owed_step_of(tmp) if here > 0 else None
+    if owed is not None and owed < here:
+        tower_step, tower_extra = steps[owed], tall.settings(likely, tall.STEPS["orca"][owed][1])
+        with_settings(tmp, tower_extra)
+
     # The checks, before anything lands in the output folder.
     info, problems = u1check.audit(tmp, src)
     sliced, slice_warnings = [], []
@@ -863,10 +625,12 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
         print("       kept the U1's own " + "; ".join(f"{tall.describe({k: u1[k]})} ({why})" for k, why in kept.items()))
     if skipped:
         print(f"       not carried: {skipped_note(skipped)}")
+    if model_brim.note(brim_whole, brim_objects):
+        print(f"       {model_brim.note(brim_whole, brim_objects)}")
     for w in slice_warnings:
         print(f"       ⚠ {w}")
-    if tower_extra:
-        print(f"       {tall.say(tall.STEPS['orca'][tower_step][0], tallest, tower_extra)}")
+    if tower_step:
+        print(f"       {tall.say(tower_step, tallest, tower_extra)}")
     for p, pl in zip(plates, placements):
         where = f"plate {p.number}: " if len(plates) > 1 else ""
         print(f"       {where}{pl.size[0]:.1f} x {pl.size[1]:.1f} x {pl.size[2]:.1f} mm"
@@ -875,26 +639,27 @@ def write(src: Path, slug: str, profiles: list[dict], out: Path, prefix: str = "
                  f"fits at {math.floor(pl.max_scale * 1000) / 10:g}% or less")
               + (f", prime tower at {pl.tower[0]:.0f},{pl.tower[1]:.0f}" if pl.tower else "")
               + ("  ⚠ tight for the prime tower -- slice it in Snapmaker Orca and look"
-                 if pl.tight and pl.fits and not sliced else ""))
+                 if pl.crowded and pl.fits and not sliced else ""))
     return out_path
 
 
 def inspect(src: Path) -> list[str]:
     """Lines describing how a source fits the U1: used slots and each plate's fit."""
-    bed = Bed.of(load_template(False))
-    used, plates = analyze(src.stem, src)
+    bed = orca_engine.Bed.of(load_template(False))
+    used, plates = orca_engine.analyze(src.stem, src)
     lines = []
     if len(used) > TARGET_FILAMENTS:
         lines.append(f"{U1_LABEL}: uses {len(used)} slots, {len(used) - TARGET_FILAMENTS} must be merged in the designer's slicer")
     for p in plates:
-        rotated = orientation(p.size, bed)
+        rotated = orca_engine.orientation(p.size, bed)
         if rotated is None:
-            fit = f"bigger than the bed (fits at <= {math.floor(fit_scale(p.size, bed)[0] * 1000) / 10:g}%)"
+            fit = f"bigger than the bed (fits at <= {math.floor(orca_engine.fit_scale(p.size, bed) * 1000) / 10:g}%)"
         else:
             fit = "fits turned 90" if rotated else "fits"
         where = f"plate {p.number}" if len(plates) > 1 else "size"
-        tall = ", tall: heavier prime tower if its strip has room" if bed.tower is not None and p.size[2] > TALL_PRINT_MM else ""
-        lines.append(f"    {where} on the {U1_LABEL}: {fit}{tall}")
+        height = (", tall: heavier prime tower if there's room for it"
+                  if bed.tower is not None and p.size[2] > tall.TALL_PRINT_MM else "")
+        lines.append(f"    {where} on the {U1_LABEL}: {fit}{height}")
     return lines
 
 

@@ -36,7 +36,8 @@ With --slice, also:
 
  13. OrcaSlicer slices every plate; each multicolor plate changes filament with
      tool changes the printer makes itself (no PAUSE or M600); the prime tower
-     OrcaSlicer actually printed stays clear of the model's footprint. It says
+     OrcaSlicer actually printed stays clear of the model's footprint and on
+     the bed. It says
      what the slicer estimates (time, grams) and how much of the filament laid
      goes into the prime tower. The U1's file gets the same in Snapmaker Orca.
 
@@ -325,11 +326,14 @@ def tower_size(cfg: dict, width: float | None = None) -> tuple[float, float, flo
 
     A tower is laid in rows the width long, so its depth is tower_area / width. With
     rib walls (Bambu Studio's default) it's built about square instead, whatever its
-    width: sqrt(tower_area) a side, plus the ribs. A brim of -1 is auto.
+    width: sqrt(tower_area) a side, plus the ribs. So is the Snapmaker U1's, by its own
+    measure (checks/u1.py tower_footprint). A brim of -1 is auto.
     """
     w = width or _first(cfg.get("prime_tower_width")) or 35
     b = _first(cfg.get("prime_tower_brim_width"))
     b = AUTO_TOWER_BRIM if b < 0 else b
+    if cfg.get("printer_model") == U1_LABEL and cfg.get("wipe_tower_wall_type") == "rib":
+        return (*u1.tower_footprint(cfg), b)  # Snapmaker Orca's, whatever its width: measured there
     area = tower_area(cfg)
     ribs = 2 * max(0.0, rib_reach(cfg) - STOCK_RIB_REACH) if rib_reach(cfg) else 0.0
     if str(cfg.get("prime_tower_rib_wall")) == "1":
@@ -963,6 +967,9 @@ def scaled_to_fit(f: Path, dest: Path, cfg: dict, crowded: bool = False) -> dict
     return scales
 
 
+OFF_BED = 1.0  # mm of a sliced tower past the bed's edge that check 13 lets by: a line's own width
+
+
 @dataclass
 class Slice:
     """Check 13's outcome, kept as what happened until it's printed (text()).
@@ -1171,6 +1178,18 @@ def slice_check(f: Path, key: str, slicer: Slicer | None = None) -> Slice:
                            f"({foot[0]:.0f}..{foot[2]:.0f} x {foot[1]:.0f}..{foot[3]:.0f})")
                     # A model bigger than the bed has no room kept for the tower: whoever scales it
                     # moves the tower too. A warning there, a failure anywhere else.
+                    (result.warnings if n in scales else result.problems).append(
+                        msg + (" -- move the tower after scaling" if n in scales else ""))
+                # Snapmaker Orca's command line slices a tower that runs off the bed and exits 0,
+                # where its app calls the tower's spot invalid and won't slice: SoftMaw's U1 tower
+                # printed 6 mm past the 270 mm bed (2026-11-24). The G-code is one plate's own.
+                pts = [tuple(float(c) for c in p.split("x")) for p in cfg["printable_area"]]
+                bed = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+                if (tw[0] < bed[0] - OFF_BED or tw[1] < bed[1] - OFF_BED
+                        or tw[2] > bed[2] + OFF_BED or tw[3] > bed[3] + OFF_BED):
+                    msg = (f"{name}: the prime tower {slicer.name} printed ({tw[0]:.0f}..{tw[2]:.0f} x "
+                           f"{tw[1]:.0f}..{tw[3]:.0f}) runs off the bed ({bed[0]:g}..{bed[2]:g} x "
+                           f"{bed[1]:g}..{bed[3]:g})")
                     (result.warnings if n in scales else result.problems).append(
                         msg + (" -- move the tower after scaling" if n in scales else ""))
         errors = [ln for ln in log if "[error]" in ln and "shader" not in ln and "Voronoi" not in ln

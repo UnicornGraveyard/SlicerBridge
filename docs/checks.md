@@ -30,7 +30,7 @@ independent, though: [what the checks share with the engines](#what-the-checks-s
 With `--slice` (or `slicerbridge verify --slice`):
 
 13. The printer's slicer slices every plate; every color change is a tool change the printer makes itself (no
-    `PAUSE`, no `M600`); the prime tower it actually printed stays clear of the model. A plate bigger than the
+    `PAUSE`, no `M600`); the prime tower it actually printed stays clear of the model and on the bed. A plate bigger than the
     bed is sliced as a scaled copy, the way a downloader would print it. A slice still running after 20 minutes
     is a failure, and a slicer crash gets one more try. Filaments the slicer won't print together until a
     preference allows it (their temperatures too far apart) get a warning naming the preference, and are sliced
@@ -60,8 +60,9 @@ And whatever the source:
     prints as one), PETG and PETG HF are PETG. The engine refuses a type the U1 has no preset for (HIPS), so a
     file from 0.4.3 or older that printed one as PLA fails here.
 5-8. Palette, extruder numbers, painted faces and paint leaves per filament, as above.
-9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base (its brim and the
-   reach of its rib wall) may touch the model gets a warning.
+9. Every printed vertex on its own U1 plate and under the max height. A prime tower whose base may touch the
+   model's bounding box gets a warning. The base is the tower at the size Snapmaker Orca prints it, with its brim:
+   about square, from the purge it holds, whatever width is set (`tower_footprint()`, measured on seven slices).
 10. The version stamp is the U1 template's. 11. Size unchanged.
 12. A plate taller than 100 mm carries at least the heavier prime tower the engine gives tall prints: brim
     10 mm, extra rib length 20 mm, rib width 12 mm, purge spacing 150%, tower speed 60 mm/s at most, rib wall.
@@ -126,9 +127,12 @@ tower against is the engine's too: `_plate_outlines()` reads it with `engines.or
 Check 13 is the independent one: it slices the file and measures the tower the slicer actually printed, from the
 G-code. It tests that tower against the model's bounding box from the checks' own reading of the plates, and only
 where the printed tower lands inside that box does it ask the engine's outline whether the model is really there.
-It tests the printed tower against the model, not against the bed's edge.
+It tests the printed tower against the bed's edge too: Snapmaker Orca's command line slices a tower that runs
+off the bed and exits 0, where its app won't slice the file.
 
-The u1 engine's checks size its tower with their own geometry, written apart from the engine's
-([checks/u1.py](../slicerbridge/checks/u1.py)), and slice it with check 13 in Snapmaker Orca. The prusa engine's
+The u1 engine places its tower as the orca engine does, with the same functions. The size it places is the U1's
+own, `tower_footprint()` in [checks/u1.py](../slicerbridge/checks/u1.py), which checks 9 and 12 size the tower
+with too, against the model's bounding box from their own reading of the plates. Check 13 slices it in Snapmaker
+Orca. The prusa engine's
 checks live in the engine itself, and `verify` runs them on a written file through the engine's `audit()`;
 PrusaSlicer loading the file (9) and slicing it (10) are the independent ones.

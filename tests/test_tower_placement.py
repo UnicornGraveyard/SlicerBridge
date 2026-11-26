@@ -72,3 +72,42 @@ def test_no_room_by_the_outline_is_no_spot():
     bed = engine.Bed(0, 0, 256, 256, 250, 35, tower_brim=3)
     outline = {(i, j) for i in range(0, 128) for j in range(0, 128)}
     assert engine.tower_spot(outline, bed, 40, 40, (128, 128)) is None
+
+
+# The U1's own tower, as its template sets it (data/u1): rib walls, 30 mm wide.
+U1_TOWER = {"printer_model": "Snapmaker U1", "enable_prime_tower": "1", "wipe_tower_wall_type": "rib",
+            "prime_tower_width": "30", "prime_tower_brim_width": "5", "prime_volume": "45",
+            "wipe_tower_extra_spacing": "120%", "wipe_tower_extra_rib_length": "8", "wipe_tower_rib_width": "8",
+            "layer_height": "0.2", "filament_colour": ["#000000"] * 4}
+
+
+def test_snapmaker_orca_builds_the_u1s_tower_from_its_purge_whatever_width_is_set():
+    # SoftMaw's, 4 colors at 0.2 mm, printed 47.0 x 56.1 mm inside its brim where the 30 mm width and a
+    # 40 mm guess had been assumed, and ran 6 mm off the bed (2026-11-24). Never short, and not far over.
+    w, d, brim = check.tower_size(U1_TOWER)
+    assert 47.0 <= w <= 51.0 and 56.1 <= d <= 61.0 and brim == 5
+    assert check.tower_size(U1_TOWER, 60.0) == (w, d, brim)  # the width set changes nothing
+    # The same at 0.12 mm printed 56.7 x 70.5: thinner layers lay the same purge over more bed.
+    w, d, _brim = check.tower_size({**U1_TOWER, "layer_height": "0.12"})
+    assert 56.7 <= w <= 61.0 and 70.5 <= d <= 75.0
+    # A tall print's tower, on the template's ribs, printed 56.7 x 65.1 at 0.16 mm; on the longer ones,
+    # three colors' printed 61.1 x 58.8.
+    heavy = {**U1_TOWER, "layer_height": "0.16", "wipe_tower_extra_spacing": "150%", "prime_tower_brim_width": "10"}
+    w, d, brim = check.tower_size(heavy)
+    assert 56.7 <= w <= 61.0 and 65.1 <= d <= 70.0 and brim == 10
+    w, d, _brim = check.tower_size({**heavy, "wipe_tower_extra_rib_length": "20", "wipe_tower_rib_width": "12",
+                                    "filament_colour": ["#000000"] * 3})
+    assert 61.1 <= w <= 65.0 and 58.8 <= d <= 64.0
+
+
+def test_a_tower_that_prints_wider_than_its_estimate_stays_on_the_bed():
+    """SoftMaw's QIDI Q2 tower (2026-11-24): estimated 49 mm wide, it printed 53. The model's brim had kept
+    the tower 7 mm inside the bed's edge; with no brim or skirt it was placed 2 mm inside, and its own
+    10 mm brim ran 2 mm off the 270 mm bed."""
+    bed = engine.Bed(0, 0, 270, 270, 250, 45, tower_brim=10, edge=2.0)  # no brim or skirt on the model
+    disc = {(i, j) for i in range(135) for j in range(135)
+            if (2 * i + 1 - 107) ** 2 + (2 * j + 1 - 135) ** 2 <= 100 ** 2}  # a round model at the left edge
+    tx, ty = engine.tower_spot(disc, bed, 49, 49, (107, 135))
+    grew, brim = 4, 10
+    assert tx - brim >= 0 and ty - brim >= 0
+    assert tx + 49 + grew + brim <= 270 and ty + 49 + grew + brim <= 270

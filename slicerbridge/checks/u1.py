@@ -37,8 +37,8 @@ And on its own, whatever the source:
      the edge ("no object is fully inside the print volume"). A model bigger than
      the bed is converted at full size anyway -- it gets a ⚠ with the scale that
      would fit, for whoever prints it. A prime tower footprint that may overlap
-     the model is flagged with a ⚠ too -- only slicing in Snapmaker Orca knows the
-     tower's real size.
+     the model's bounding box is flagged with a ⚠ too, at the size Snapmaker Orca
+     prints a tower (tower_footprint): slicing it there shows the rest.
  10. The version stamp (Application, X-BBL-Client-Version) is the U1 template's
      (Bambu Studio 2.2.1, the version the project settings say too) or Snapmaker
      Orca's own, not the Bambu Studio 2.6-2.8 that saved the source -- newer than
@@ -46,7 +46,7 @@ And on its own, whatever the source:
  11. Size unchanged: each plate's printed parts measure the same as in the
      source, to 0.01 mm (width and depth swap if it was turned 90 degrees).
  12. A plate taller than TALL_PRINT_MM carries at least the heavier prime tower
-     the u1 engine gives tall prints (TALL_TOWER there). U1 users lost Gatefang's
+     the u1 engine gives tall prints (tall.py's). U1 users lost Gatefang's
      tower (200 mm print) around layer 665 on a much lighter one. Where the heavier
      base can't fit at the file's tower spot (it would touch the model's footprint
      or leave the bed), the same on the file's own ribs is required; where that
@@ -72,10 +72,26 @@ WHITE = {"#FFFFFF", "#FFFFFFFF"}
 TOOLS = 4
 PLATE_STRIDE = 1.2        # Bambu's PartPlate layout: plates one bed + a fifth of a bed apart
 EPS = 1e-4
-TOWER_DEPTH_GUESS = 40.0  # mm; only the slicer knows
+# Snapmaker Orca builds the U1's tower from the purge it holds, about square, whatever
+# prime_tower_width says (OrcaSlicer 2.4.2 keeps the width). Measured in Snapmaker Orca
+# 2.4.1 on the template's tower (prime volume 45, ribs +8 x 8 mm), inside its brim
+# (2026-11-24), where 30 x 40 mm had been assumed and SoftMaw's tower ran off the bed:
+#   colors  layer  spacing  ribs      printed        tower_footprint()
+#   4       0.20   120%     +8 x 8    47.0 x 56.1    50.0 x 60.0   SoftMaw
+#   4       0.16   150%     +8 x 8    56.7 x 65.1    57.1 x 69.4   SoftMaw, the tall tower's brim and spacing
+#   4       0.12   120%     +8 x 8    56.7 x 70.5    58.2 x 71.0   a 40 mm cube
+#   3       0.16   120%     +8 x 8    45.6 x 46.5    47.5 x 48.0   a 40 mm cube
+#   3       0.20   120%     +8 x 8    41.6 x 43.5    44.7 x 45.2   a 40 mm cube
+#   2       0.16   120%     +8 x 8    38.1 x 37.7    39.9 x 40.4   a 40 mm cube
+#   3       0.16   150%     +20 x 12  61.1 x 58.8    61.9 x 62.4   a 120 mm cube, the whole tall tower
+# A side is the square root of one change fewer than the colors, each prime_volume at
+# the layer height and line spacing, and four colors' runs a third deeper. TOWER_WALLS
+# is what its walls add across and deep, beside the ribs. A fit to these, kept on the
+# long side: a tower sized short runs off the bed, one sized long only costs room.
+TOWER_WALLS = (10.2, 10.7)
 
-# Check 12: a print taller than this needs at least the tower the u1 engine's
-# TALL_TOWER sets. Written out here on purpose, not imported from the engine.
+# Check 12: a print taller than this needs at least the tower the u1 engine gives
+# it (tall.py). Written out here on purpose, not imported from the engine.
 TALL_PRINT_MM = 100.0
 TALL_TOWER_MIN = (  # (setting, value, True if the value is a ceiling)
     ("prime_tower_brim_width", 10.0, False),
@@ -115,6 +131,26 @@ def rib_reach(cfg: dict) -> float:
     return max(0.0, (extra + width) / (2 * math.sqrt(2)))
 
 
+def tower_footprint(cfg: dict) -> tuple[float, float]:
+    """(width, depth) in mm of the prime tower Snapmaker Orca prints for these settings, inside
+    its brim, from the corner wipe_tower_x/y name (TOWER_WALLS). Sized for every filament the
+    file lists: the U1's lists all four."""
+    colors = len(cfg.get("filament_colour") or []) or 1
+    layer = _num(cfg.get("layer_height")) or 0.2
+    volume = _num(cfg.get("prime_volume")) or 45.0
+    spacing = (_num(cfg.get("wipe_tower_extra_spacing")) or 100.0) / 100
+    side = math.sqrt(max(colors - 1, 1) * volume / layer * spacing)
+    ribs = 2 * rib_reach(cfg)
+    return side + TOWER_WALLS[0] + ribs, side * (4 / 3 if colors >= 4 else 1.0) + TOWER_WALLS[1] + ribs
+
+
+def tower_box(cfg: dict, at: tuple) -> tuple:
+    """(x0, y0, x1, y1) the tower at corner `at` covers, its brim included."""
+    w, d = tower_footprint(cfg)
+    brim = max(_num(cfg.get("prime_tower_brim_width")) or 0.0, 0.0)
+    return at[0] - brim, at[1] - brim, at[0] + w + brim, at[1] + d + brim
+
+
 def heavy_base_fits(cfg: dict, boxes: list[tuple], rules: tuple = TALL_TOWER_MIN) -> bool:
     """Whether `rules`' wider base, at this file's tower spots, clears every plate's model
     footprint and stays on its bed. The same box check 9 draws. Rules that set the ribs
@@ -126,20 +162,33 @@ def heavy_base_fits(cfg: dict, boxes: list[tuple], rules: tuple = TALL_TOWER_MIN
         heavy[key] = f"{want:g}"
     if any(key == "wipe_tower_rib_width" for key, _w, _c in rules):
         heavy["wipe_tower_wall_type"] = "rib"
-    pad = (_num(heavy["prime_tower_brim_width"]) or 0.0) + rib_reach(heavy)
-    tw = float(cfg.get("prime_tower_width") or 30)
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
     for idx, (number, a, b) in enumerate(boxes):
         if idx >= len(txs) or idx >= len(tys) or a[0] == float("inf"):
             return False
         bx0, by0, bx1, by1 = plate_area(number - 1, len(boxes), area)
-        tx, ty = float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]
-        t = (tx - pad, ty - pad, tx + tw + pad, ty + TOWER_DEPTH_GUESS + pad)
+        t = tower_box(heavy, (float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]))
         if t[0] < bx0 - EPS or t[1] < by0 - EPS or t[2] > bx1 + EPS or t[3] > by1 + EPS:
             return False
         if t[0] < b[0] and t[2] > a[0] and t[1] < b[1] and t[3] > a[1]:
             return False
     return True
+
+
+def owed_step(cfg: dict, boxes: list[tuple]) -> int | None:
+    """Which tower check 12 holds a tall file to: 0 the whole heavier tower, 1 the same on the
+    file's own ribs, 2 the slower tower alone; None for a file it doesn't apply to."""
+    tallest = max((b[2] - a[2] for _n, a, b in boxes if a[0] != float("inf")), default=0.0)
+    if cfg.get("enable_prime_tower") != "1" or tallest <= TALL_PRINT_MM:
+        return None
+    return next((i for i, rules in enumerate((TALL_TOWER_MIN, TALL_TOWER_MIN_STOCK_RIBS))
+                 if heavy_base_fits(cfg, boxes, rules)), 2)
+
+
+def owed_step_of(f: Path) -> int | None:
+    """owed_step() for a written U1 file: what the u1 engine asks before it keeps one."""
+    with zipfile.ZipFile(f) as z:
+        return owed_step(json.loads(z.read("Metadata/project_settings.config").decode()), plate_boxes(z))
 
 
 def rgba(c: str) -> str:
@@ -345,9 +394,7 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
 
     info, problems, warnings = [], [], []
     tower = cfg.get("enable_prime_tower") == "1"
-    tw, brim = float(cfg.get("prime_tower_width") or 30), float(cfg.get("prime_tower_brim_width") or 0)
     txs, tys = cfg.get("wipe_tower_x") or [], cfg.get("wipe_tower_y") or []
-    pad = brim + rib_reach(cfg)
     for idx, (number, a, b) in enumerate(boxes):
         bx0, by0, bx1, by1 = plate_area(number - 1, len(boxes), area)
         label = f"plate {number}" if len(boxes) > 1 else "plate"
@@ -374,8 +421,7 @@ def on_plates(z: zipfile.ZipFile, cfg: dict) -> tuple[list[str], list[str], list
                             f"(x {a[0] - bx0:.1f}..{b[0] - bx0:.1f}, y {a[1] - by0:.1f}..{b[1] - by0:.1f}, "
                             f"z to {b[2]:.1f}; the bed is {bx1 - bx0:g} x {by1 - by0:g} x {height:g})")
         if tower and idx < len(txs) and idx < len(tys):
-            tx, ty = float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]
-            t = (tx - pad, ty - pad, tx + tw + pad, ty + TOWER_DEPTH_GUESS + pad)
+            t = tower_box(cfg, (float(txs[idx]) + bx0 - area[0], float(tys[idx]) + by0 - area[1]))
             if t[0] < b[0] and t[2] > a[0] and t[1] < b[1] and t[3] > a[1]:
                 warnings.append(f"{label}: the prime tower at {float(txs[idx]):.0f},{float(tys[idx]):.0f} may touch "
                                 f"the model's footprint -- slice it in Snapmaker Orca and look")
@@ -464,9 +510,10 @@ def audit(f: Path, src: Path | None) -> tuple[list[str], list[str]]:
 
     # 12. a tall print carries the heavier prime tower
     tallest = max((b[2] - a[2] for _n, a, b in boxes if a[0] != float("inf")), default=0.0)
-    if cfg.get("enable_prime_tower") == "1" and tallest > TALL_PRINT_MM:
-        owed = next((r for r in (TALL_TOWER_MIN, TALL_TOWER_MIN_STOCK_RIBS) if heavy_base_fits(cfg, boxes, r)), ())
-        roomy = owed is TALL_TOWER_MIN
+    step = owed_step(cfg, boxes)
+    if step is not None:
+        owed = (TALL_TOWER_MIN, TALL_TOWER_MIN_STOCK_RIBS, ())[step]
+        roomy = step == 0
         owed_keys = {key for key, _w, _c in owed}
         weak = []
         if roomy and cfg.get("wipe_tower_wall_type") != "rib":

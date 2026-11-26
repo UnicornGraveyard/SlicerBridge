@@ -27,6 +27,12 @@ PRINTER_TUNED = re.compile(r"(_speed|_acceleration|_jerk|_line_width|_filament)$
 # timelapse moves a Bambu camera wants), and filament numbers, handled apart.
 NEVER_CARRY = re.compile(r"^(prime_tower_|wipe_tower_|flush_volumes_|flush_multiplier$|timelapse_|"
                          r"enable_prime_tower$|.*_filament$)")
+# One setting under two names: Bambu Studio's, and OrcaSlicer's (its forks' too, and the
+# one the prusa engine translates). Carried under whichever the printer's slicer has:
+# by name alone, SoftMaw's 5 mm infill anchor reached only the Bambu printers, and every
+# other file kept its printer's 12 to 40 mm (2026-11-24).
+ORCA_NAME = {"sparse_infill_anchor": "infill_anchor", "sparse_infill_anchor_max": "infill_anchor_max"}
+OTHER_NAME = {**ORCA_NAME, **{orca: bambu for bambu, orca in ORCA_NAME.items()}}
 
 
 def shapes_the_print(key: str) -> bool:
@@ -57,17 +63,19 @@ def carry_print_settings(src_cfg: dict, base: dict) -> tuple[dict, dict]:
     """({key: the source's value} to carry onto `base`, {key: why not}) for the print settings the designer chose.
 
     `base` is the target's own settings, in the same Bambu project format: a value it
-    already has isn't carried, and one it keeps another way is skipped, with why.
+    already has isn't carried, and one it keeps another way is skipped, with why. A
+    setting the target's slicer names differently (OTHER_NAME) is carried under its name.
     """
     carried, skipped = {}, {}
     for k in print_keys(src_cfg):
         if NEVER_CARRY.match(k) or k not in src_cfg:
             continue
         v = src_cfg[k]
-        if k not in base:
+        to = OTHER_NAME[k] if k not in base and OTHER_NAME.get(k) in base else k
+        if to not in base:
             skipped[k] = "not a setting of the printer's slicer"
-        elif type(v) is not type(base[k]) or (isinstance(v, list) and len(v) != len(base[k])):
+        elif type(v) is not type(base[to]) or (isinstance(v, list) and len(v) != len(base[to])):
             skipped[k] = f"Bambu Studio keeps it per nozzle ({v})"
-        elif v != base[k]:
-            carried[k] = v
+        elif v != base[to]:
+            carried[to] = v
     return carried, skipped
